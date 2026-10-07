@@ -90,7 +90,8 @@ class Embedder:
             except httpx.TransportError as exc:
                 problem = f"{type(exc).__name__}: {exc}"
             except httpx.HTTPStatusError as exc:
-                raise EmbeddingError(f"embeddings request failed: HTTP {exc.response.status_code} {exc.response.text[:300]}") from exc
+                status, body = exc.response.status_code, exc.response.text[:300]
+                raise EmbeddingError(f"embeddings request failed: HTTP {status} {body}") from exc
             if attempt == self.max_retries:
                 raise EmbeddingError(f"embeddings request failed after {attempt + 1} attempts: {problem}")
             delay = self.backoff * 2**attempt

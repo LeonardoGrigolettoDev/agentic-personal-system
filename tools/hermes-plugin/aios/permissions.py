@@ -38,8 +38,10 @@ TOOL_CATEGORIES = {
 SECRET_PATH = re.compile(r"(^|/)(\.env(\.(?!example$|sample$|template$)[\w-]+)?|[^/]*\.pem|id_(rsa|ed25519|ecdsa)(\.pub)?|"
                          r"secrets?\.(ya?ml|json|toml|env|txt)|\.ssh/[^/]+|\.netrc|\.git-credentials|credentials\.json)$",
                          re.IGNORECASE)
-SECRET_IN_COMMAND = re.compile(r"(^|[\s'\"=/<])(\.env\b|[\w./-]*\.pem\b|id_(rsa|ed25519|ecdsa)\b|\.ssh/|\.git-credentials|\.netrc)",
-                               re.IGNORECASE)
+SECRET_IN_COMMAND = re.compile(
+    r"(^|[\s'\"=/<])(\.env(?!\.(example|sample|template)\b)\b|[\w./-]*\.pem\b|id_(rsa|ed25519|ecdsa)\b|\.ssh/|"
+    r"\.git-credentials|\.netrc)",
+    re.IGNORECASE)
 DESTRUCTIVE = [
     (re.compile(r"\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)[a-z]*\s+(/|~|\$HOME|\*)(\s|$)", re.I), "rm -rf on a root/home path"),
     (re.compile(r"\bgit\s+push\b[^\n]*(--force\b|-f\b)[^\n]*\b(main|master)\b", re.I), "force push to main/master"),

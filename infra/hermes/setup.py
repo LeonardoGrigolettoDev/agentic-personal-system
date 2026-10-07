@@ -165,7 +165,8 @@ def main() -> int:
 
     changed = write_config(HOME, template, args.dry_run)
     report.append(f"chief config.yaml: {'updated' if changed else 'unchanged'}")
-    report.append(f"chief SOUL.md: {'updated' if sync_file(AIOS / 'agents/chief/SOUL.md', HOME / 'SOUL.md', args.dry_run) else 'unchanged'}")
+    soul = sync_file(AIOS / "agents/chief/SOUL.md", HOME / "SOUL.md", args.dry_run)
+    report.append(f"chief SOUL.md: {'updated' if soul else 'unchanged'}")
     report.append(f"chief plugin link: {'created' if link_plugin(HOME, args.dry_run) else 'ok'}")
 
     for name, prof in (spec.get("profiles") or {}).items():
