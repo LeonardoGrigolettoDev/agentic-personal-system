@@ -5,7 +5,7 @@ The only Go component of the system. It owns **typed decisions (Jev)**, **routin
 through the `aios` plugin (CONTRACTS §0, §3).
 
 Answers **typed questions about a state** (binary / choice / score) with calibrated probabilities.
-It is used at the orchestrator gates (route, continue/repair/escalate/done), never after every tool call.
+It is used at the Hermes gates (route, continue/repair/escalate/done), never after every tool call.
 
 Backends form a **cascade**, cheapest first. Only questions that are still unresolved move on, and an answer is accepted when `confidence ≥ threshold`:
 

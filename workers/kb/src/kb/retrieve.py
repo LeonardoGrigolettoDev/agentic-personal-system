@@ -63,8 +63,10 @@ def tenant_scope(tenant: str, include_shared: bool = False) -> list[str]:
     return [tenant, "shared"] if include_shared and tenant != "shared" else [tenant]
 
 
+# domain_strict=false also admits documents with no domain (most vault notes): used by the Context Compiler
 _FILTER = """d.tenant = ANY(%(tenants)s::tenant[]) AND d.status = 'active'
-             AND (%(domain)s::domain IS NULL OR d.domain = %(domain)s::domain)"""
+             AND (%(domain)s::domain IS NULL OR d.domain = %(domain)s::domain
+                  OR (NOT %(domain_strict)s AND d.domain IS NULL))"""
 
 _VECTOR_SQL = f"""
 SELECT c.id FROM chunks c JOIN documents d ON d.id = c.document_id
@@ -108,6 +110,7 @@ def search(
     include_shared: bool = False,
     embedder: QueryEmbedder | None = None,
     query_vector: Sequence[float] | None = None,
+    domain_strict: bool = True,
 ) -> list[Hit]:
     """Top-k chunks for `query` within `tenant` (+ 'shared' if asked). Text-only if no vector is available."""
     query = query.strip()
@@ -118,7 +121,8 @@ def search(
     if query_vector is None and embedder is not None:
         query_vector = embedder.embed_query(query)
 
-    params = {"tenants": tenant_scope(tenant, include_shared), "domain": domain, "q": query, "limit": k * CANDIDATE_FACTOR}
+    params = {"tenants": tenant_scope(tenant, include_shared), "domain": domain, "domain_strict": domain_strict,
+              "q": query, "limit": k * CANDIDATE_FACTOR}
     rankings: list[list[int]] = []
     vector_ids: list[int] = []
     if query_vector is not None:

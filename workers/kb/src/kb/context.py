@@ -1,7 +1,7 @@
 """Context Compiler (docs/ARCHITECTURE.md §9): large memory in, small relevant Task Context out.
 
 Knowledge Base -> retriever -> candidates -> relevance filter -> greedy fill under a token budget.
-Priority when the budget is tight: constraints/rules > decisions > project state > memories > documents.
+Priority when the budget is tight: rules/constraints > global preferences > decisions > memories > documents.
 Output order is deterministic so the dynamic part of the prompt stays as cache-friendly as possible (§16).
 """
 
@@ -18,7 +18,8 @@ from kb.sources import DOMAINS
 
 log = logging.getLogger(__name__)
 
-CONSTRAINT_KINDS = {"rule", "constraint"}
+CONSTRAINT_KINDS = ("rule", "constraint")
+STANDING_GLOBAL_KINDS = ("preference", "working_style", "communication", "rule", "constraint")
 DECISION_KINDS = {"decision", "architecture"}
 MIN_MEMORY_SIMILARITY = 0.35
 DOC_K = 8
@@ -66,11 +67,15 @@ def _memory_candidates(conn, req: ContextRequest, tenants: list[str], qvec) -> l
             if prev is None or (m.similarity or 0) > (prev.similarity or 0):
                 found[m.id] = m
 
-    # standing rules/preferences apply regardless of similarity
-    add(memory.list_memories(conn, tenants, scope="global", kind="rule", limit=20))
-    add(memory.list_memories(conn, tenants, scope="global", kind="constraint", limit=20))
-    if req.project:
-        add(memory.list_memories(conn, tenants, scope="project", project=req.project, kind="constraint", limit=20))
+    # §11 standing context, regardless of similarity: global preferences / working style / communication /
+    # rules, plus the rules and constraints of the task's domain and project
+    for kind in STANDING_GLOBAL_KINDS:
+        add(memory.list_memories(conn, tenants, scope="global", kind=kind, limit=10))
+    for kind in CONSTRAINT_KINDS:
+        if req.domain:
+            add(memory.list_memories(conn, tenants, scope="domain", domain=req.domain, kind=kind, limit=10))
+        if req.project:
+            add(memory.list_memories(conn, tenants, scope="project", project=req.project, kind=kind, limit=10))
     if qvec is None:
         add(memory.list_memories(conn, tenants, domain=req.domain, limit=30))
         return list(found.values())
@@ -119,9 +124,16 @@ def compile_context(conn: psycopg.Connection, req: ContextRequest, embedder: Que
         budget.take(" ".join(str(v) for v in project.values() if v))
 
     memories = sorted(_memory_candidates(conn, req, tenants, qvec), key=lambda m: (-_rank(m), m.id))
-    constraints, decisions, others = [], [], []
+    preferences, constraints, decisions, others = [], [], [], []
     for m in memories:
-        (constraints if m.kind in CONSTRAINT_KINDS else decisions if m.kind in DECISION_KINDS else others).append(m)
+        if m.kind in CONSTRAINT_KINDS:
+            constraints.append(m)
+        elif m.kind in DECISION_KINDS:
+            decisions.append(m)
+        elif m.scope == "global" and m.kind in STANDING_GLOBAL_KINDS:
+            preferences.append(m)
+        else:
+            others.append(m)
 
     def fill(items: list[memory.Memory]) -> list[dict]:
         out = []
@@ -132,12 +144,13 @@ def compile_context(conn: psycopg.Connection, req: ContextRequest, embedder: Que
         return out
 
     picked_constraints = fill(constraints)
+    picked_preferences = fill(preferences)
     picked_decisions = fill(decisions)
     picked_memories = fill(others)
 
     documents = []
     hits = retrieve.search(conn, req.task, req.tenant, k=DOC_K, domain=req.domain,
-                           include_shared=req.include_shared, query_vector=qvec)
+                           include_shared=req.include_shared, query_vector=qvec, domain_strict=False)
     for h in hits:
         text = h.content if budget.left > estimate_tokens(h.content) + 4 else h.snippet
         if budget.take(text):
@@ -151,6 +164,7 @@ def compile_context(conn: psycopg.Connection, req: ContextRequest, embedder: Que
         "project": project,
         "current_state": project["current_state"] if project else None,
         "constraints": picked_constraints,
+        "preferences": picked_preferences,
         "relevant_decisions": picked_decisions,
         "relevant_memories": picked_memories,
         "relevant_documents": documents,
@@ -170,7 +184,8 @@ def render(ctx: dict) -> str:
             lines.append(p["description"])
         if p.get("current_state"):
             lines.append(f"Estado atual: {p['current_state']}")
-    for title, key in (("Restrições e regras", "constraints"), ("Decisões relevantes", "relevant_decisions"),
+    for title, key in (("Restrições e regras", "constraints"), ("Preferências do usuário", "preferences"),
+                       ("Decisões relevantes", "relevant_decisions"),
                        ("Memórias relevantes", "relevant_memories")):
         if ctx.get(key):
             lines.append(f"\n## {title}")
