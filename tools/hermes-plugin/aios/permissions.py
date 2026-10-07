@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover - Hermes ships PyYAML
 TOOL_CATEGORIES = {
     "terminal": "shell",
     "execute_code": "shell",
-    "process": "shell",
+    "process_manage": "shell",
     "read_file": "filesystem",
     "write_file": "filesystem",
     "patch": "filesystem",

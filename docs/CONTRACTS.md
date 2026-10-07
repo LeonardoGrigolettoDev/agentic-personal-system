@@ -178,10 +178,9 @@ Each service gets its own key, with a model allowlist and a budget:
 
 | Key | Models |
 |---|---|
-| `HERMES_LITELLM_KEY` | tiers 2–6 |
+| `HERMES_LITELLM_KEY` | tiers 2–7 (tier 7 only after a Decision Service approval: `resolve` caps it otherwise) |
 | `DECISION_LITELLM_KEY` | local + tier2-cheap |
 | `KB_LITELLM_KEY` | embed + local + tier 2 |
 | `EDGE_LITELLM_KEY` | local-qwen, embed-local, tier 2 |
 | `BENCH_LITELLM_KEY` | judge, tier 5 |
 
-Tier 7 needs an approval.

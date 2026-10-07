@@ -9,8 +9,9 @@ OLLAMA_EMBED := qwen3-embedding:0.6b
 WHISPER_MODEL := large-v3-turbo-q5_0
 
 .DEFAULT_GOAL := help
+HERMES_PY := /opt/hermes/.venv/bin/python
 .PHONY: help doctor env litellm-config models whisper-model up-core up down ps logs migrate psql litellm-keys \
-        hermes-config hermes-shell hermes-doctor obs-up obs-down transcribe health smoke backup stats \
+        hermes-setup hermes-shell hermes-doctor obs-up obs-down transcribe health smoke backup stats \
         timers-install test kb-ingest kb-search kb-stats kb-maintain
 
 help: ## list targets
@@ -52,9 +53,13 @@ up-core: litellm-config ## start core in dependency order: db -> migrate -> lite
 	bash infra/scripts/litellm-keys.sh
 	$(DC) up -d --build --wait decision knowledge
 
-up: up-core hermes-config ## core + Hermes agent
+up: up-core ## core + sandbox + Hermes agent (then configures profiles, plugin and cron)
 	@source .env; [ -n "$$HERMES_LITELLM_KEY" ] || { echo "HERMES_LITELLM_KEY empty - run make litellm-keys"; exit 1; }
-	$(DC) --profile agent up -d --wait hermes
+	@[ -f data/sandbox/keys/id_ed25519 ] || $(MAKE) --no-print-directory sandbox-keys
+	@mkdir -p data/hermes data/storage data/sandbox/workspace backups
+	$(DC) --profile agent up -d --build --wait sandbox hermes
+	$(MAKE) --no-print-directory hermes-setup
+	$(DC) --profile agent restart hermes
 
 down: ## stop everything (volumes kept)
 	$(DC) --profile agent --profile observability --profile media down
@@ -74,19 +79,29 @@ psql: ## psql into the aios DB
 litellm-keys: ## create budgeted virtual keys (hermes/decision/kb) into .env
 	bash infra/scripts/litellm-keys.sh
 
-hermes-config: ## seed data/hermes (config.yaml, SOUL.md, .env) - never overwrites Hermes-owned files
-	@mkdir -p data/hermes data/whisper-models data/storage backups knowledge/inbox knowledge/processed
-	@[ -f data/hermes/config.yaml ] || cp config/hermes/config.yaml data/hermes/config.yaml
-	@[ -f data/hermes/SOUL.md ] || cp agents/chief/SOUL.md data/hermes/SOUL.md
-	@source .env; umask 077; printf 'LITELLM_API_KEY=%s\nAPI_SERVER_KEY=%s\n' "$$HERMES_LITELLM_KEY" "$$HERMES_API_KEY" > data/hermes/.env
-	@echo "data/hermes seeded"
+hermes-setup: ## (re)apply Hermes config, domain profiles, aios plugin and cron reviews (idempotent)
+	$(DC) --profile agent exec hermes $(HERMES_PY) /opt/aios/bin/setup.py $(ARGS)
+
+hermes-kanban: ## show the Kanban board (domain agent tasks)
+	$(DC) --profile agent exec hermes hermes kanban list
+
+approvals: ## pending human approvals (escalation beyond max_tier / Fable)
+	@source .env; curl -fsS localhost:8090/v1/approvals?status=pending -H "Authorization: Bearer $$DECISION_API_KEY" | jq
+
+approve: ## approve: make approve id=<approval-id> [no=1 to reject]
+	@source .env; curl -fsS -X POST localhost:8090/v1/approvals/$(id) -H "Authorization: Bearer $$DECISION_API_KEY" \
+	  -H 'Content-Type: application/json' -d '{"approve": $(if $(no),false,true), "by": "'"$$USER"'"}' | jq
+
+report: ## Decision Service report: make report r=costs|models|agents|skills|loops|routes|escalations|spend
+	@source .env; curl -fsS localhost:8090/v1/reports/$(or $(r),costs) -H "Authorization: Bearer $$DECISION_API_KEY" | jq
 
 hermes-shell: ## interactive Hermes chat inside the container
 	$(DC) --profile agent exec -it hermes hermes chat
 
-hermes-doctor: ## hermes doctor + config check
+hermes-doctor: ## hermes doctor + config check + aios plugin doctor
 	$(DC) --profile agent exec hermes hermes doctor
 	$(DC) --profile agent exec hermes hermes config check
+	$(DC) --profile agent exec hermes hermes plugins doctor /opt/aios/plugins/aios --ci
 
 obs-up: ## start self-hosted Langfuse v4 (~2 GB RAM; stop Ollama models first)
 	$(DC) --profile observability up -d --wait
@@ -133,9 +148,13 @@ timers-install: ## install systemd --user timers (nightly backup 03:00, hermes r
 	systemctl --user enable --now aios-backup.timer aios-hermes-restart.timer
 	systemctl --user list-timers 'aios-*'
 
-test: ## unit tests (Go decision service + Python KB worker)
+test: ## unit tests (Go decision service, knowledge, Hermes plugin; components add their own via mk/*.mk)
 	cd decision && $(GO) vet ./... && $(GO) test ./...
 	$(UV) run --project workers/kb pytest -q workers/kb/tests
+	$(UV) run --quiet --with pytest --with pyyaml pytest -q tools/hermes-plugin/tests
+
+test-integration: ## ledger + knowledge against the running Postgres (make up-core first)
+	@source .env; cd decision && DECISION_TEST_DATABASE_URL="postgresql://aios:$$AIOS_DB_PASSWORD@127.0.0.1:$${PG_HOST_PORT:-5432}/aios" $(GO) test -count=1 ./internal/ledger/
 
 kb-ingest: ## ingest into the KB: make kb-ingest tenant=pessoal path=~/Obsidian/Pessoal [domain=learning]
 	@[ -n "$(tenant)" ] && [ -n "$(path)" ] || { echo "usage: make kb-ingest tenant=nitro|pessoal|shared path=<dir|file> [domain=...]"; exit 1; }
@@ -149,3 +168,6 @@ kb-stats: ## KB document/chunk counts per tenant/domain
 
 kb-maintain: ## expire temporary/superseded memories, drop orphan chunks
 	$(KB) maintain
+
+# component targets (sandbox, edge, bench, railway, ...) live in mk/*.mk
+-include mk/*.mk

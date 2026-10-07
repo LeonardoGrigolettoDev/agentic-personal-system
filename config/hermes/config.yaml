@@ -1,14 +1,15 @@
-# Hermes Agent config TEMPLATE. `make hermes-config` copies it once into data/hermes/config.yaml
-# (HERMES_HOME=/opt/data); after that Hermes owns the file and auto-migrates it with backups.
-# Validate with: make hermes-doctor   (runs `hermes doctor` + `hermes config check`)
-# Docs: https://hermes-agent.nousresearch.com/docs/  - see docs/research-hermes.md
+# Hermes Agent config TEMPLATE for the chief (default home, HERMES_HOME=/opt/data).
+# `make hermes-setup` renders it into data/hermes/config.yaml and, with per-profile overrides from
+# config/hermes/profiles.yaml, into data/hermes/profiles/<agent>/config.yaml. Hermes may migrate the
+# rendered files; re-running hermes-setup re-applies the keys below without touching anything else.
+# Docs: https://hermes-agent.nousresearch.com/docs/ (verified against v2026.9.24 source).
 
 model:
   provider: custom
   base_url: http://litellm:4000/v1
-  key_env: LITELLM_API_KEY # budgeted LiteLLM virtual key (make litellm-keys), never the master key
-  default: tier3-code # Kimi K2.7 Code; escalate per task (§13)
-  context_length: 262144 # pinned: Hermes rejects models under 64K and aliases don't expose ctx
+  key_env: LITELLM_API_KEY # budgeted LiteLLM virtual key (make litellm-keys) — never the master key
+  default: tier3-code # starting model only: the aios plugin sets the model per call (Decision Service)
+  context_length: 262144 # pinned: Hermes rejects models under 64K and LiteLLM aliases don't expose ctx
 
 providers:
   litellm:
@@ -16,42 +17,59 @@ providers:
     key_env: LITELLM_API_KEY
     transport: chat_completions
     default_model: tier3-code
-    # switch inside a session: /model custom:litellm:tier5-sonnet
-    # NEVER use local-qwen / decider-local here (4K ctx, below Hermes' 64K gate)
 
-auxiliary:
-  compression:
-    model: tier2-cheap # 1M ctx, $0.03/M - long histories get summarized cheaply
-    base_url: http://litellm:4000/v1
+auxiliary: # Hermes' own side calls: always cheap (not routed by the main-loop middleware)
+  compression: { provider: custom, model: tier2-cheap, base_url: http://litellm:4000/v1, key_env: LITELLM_API_KEY }
+  title_generation: { provider: custom, model: tier2-cheap, base_url: http://litellm:4000/v1, key_env: LITELLM_API_KEY }
+  kanban_decomposer: { provider: custom, model: tier2-flash, base_url: http://litellm:4000/v1, key_env: LITELLM_API_KEY }
+  review: { provider: custom, model: tier5-sonnet, base_url: http://litellm:4000/v1, key_env: LITELLM_API_KEY }
 
 delegation:
   provider: custom
-  model: tier3-code
   base_url: http://litellm:4000/v1
   key_env: LITELLM_API_KEY
+  model: tier2-flash # delegate_task children: cheap workers; planning stays on the routed model
   max_concurrent_children: 2 # RAM-bound on 16 GB
   max_spawn_depth: 1
 
-terminal:
-  backend: local # runs inside the hermes container (the isolation boundary); no docker.sock mount
+terminal: # every tool command runs in the isolated sandbox container, never in Hermes (§21)
+  backend: ssh
+  ssh_host: sandbox
+  ssh_user: agent
+  ssh_port: 22
+  ssh_key: /opt/aios/ssh/id_ed25519
+  cwd: /workspace
+  timeout: 300
+  lifetime_seconds: 900
 
 approvals:
   mode: manual # destructive tools ask first (§24.16)
 
-memory:
+memory: # Hermes' bounded MEMORY.md/USER.md stay on; durable memory lives in the knowledge service (MCP)
   memory_enabled: true
   user_profile_enabled: true
 
 skills:
-  external_dirs: [/opt/shared-skills] # ./skills in the repo, mounted read-only
+  external_dirs: [/opt/shared-skills] # ./skills in the repo, read-only
+
+mcp_servers:
+  knowledge:
+    url: http://knowledge:8080/mcp/
+    headers:
+      Authorization: "Bearer ${KNOWLEDGE_API_KEY}"
+
+plugins:
+  enabled: [aios]
+
+kanban: # domain agents run as on-demand Kanban workers (profiles), one at a time on 16 GB
+  dispatch_in_gateway: true
+  dispatch_interval_seconds: 30
+  max_in_progress: 1
+  auto_decompose: false # the chief decomposes explicitly; avoids surprise token spend
+  review_dispatch: true
 
 cron:
-  model: tier2-cheap
+  catch_up_missed: true
   max_parallel_jobs: 1
 
 hooks_auto_accept: false
-# Phase 2 (after `hermes config check` confirms the schema on this version):
-# plugins: { enabled: [observability/langfuse] }
-# hooks:
-#   - { event: pre_tool_call, matcher: "terminal", command: /opt/data/hooks-bin/decision-guard.sh, timeout: 10, fail_closed: true }
-#   outbound: [{ url: http://decision:8080/v1/hermes-events, events: ["agent:end", "session:end"], secret_env: HERMES_WEBHOOK_SECRET }]

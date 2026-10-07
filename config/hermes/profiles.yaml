@@ -1,0 +1,37 @@
+# Domain agents (docs/ARCHITECTURE.md §4) as Hermes profiles. Rendered by infra/hermes/setup.py on top of
+# config/hermes/config.yaml. Each profile gets agents/<name>/SOUL.md and the aios plugin; the Decision
+# Service picks its models/budget from agents/<name>/agent.yaml. Profiles run on demand as Kanban workers.
+profiles:
+  engineering:
+    description: Programação — repositórios, implementação, debugging, code review, testes.
+    overrides:
+      model: { default: tier3-code }
+  finance:
+    description: Finanças pessoais e da empresa — planilhas, gastos, orçamento. Só analisa e recomenda.
+    overrides:
+      model: { default: tier2-flash }
+      delegation: { max_concurrent_children: 1 }
+  projects:
+    description: Projetos e empresa — status, roadmap, decisões, próximos passos.
+    overrides:
+      model: { default: tier2-flash }
+  personal:
+    description: Organização pessoal — agenda, rotinas, revisões.
+    overrides:
+      model: { default: tier2-cheap }
+      terminal: { backend: local } # no shell tools for this agent (blocked by policy anyway)
+  learning:
+    description: Estudos — aulas, resumos, planos de estudo, revisão espaçada.
+    overrides:
+      model: { default: tier2-cheap }
+
+# Scheduled reviews (§17 TIME -> CRON). Run by the chief gateway; each becomes a normal Hermes session
+# that the aios plugin routes and budgets. Prompts live in workflows/<name>.md.
+cron:
+  - { name: morning-review,     schedule: "30 7 * * *",  skills: [productivity/daily_review] }
+  - { name: daily-planning,     schedule: "0 8 * * 1-5", skills: [productivity/daily_planning] }
+  - { name: engineering-review, schedule: "0 9 * * 1-5", skills: [projects/project_status] }
+  - { name: project-review,     schedule: "30 18 * * 1-5", skills: [projects/project_status, projects/roadmap_update] }
+  - { name: learning-review,    schedule: "0 20 * * *",  skills: [knowledge/knowledge_capture] }
+  - { name: daily-reflection,   schedule: "30 22 * * *", skills: [productivity/daily_review] }
+  - { name: weekly-review,      schedule: "0 19 * * 0",  skills: [productivity/weekly_review] }

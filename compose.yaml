@@ -231,15 +231,21 @@ services:
     profiles: ["agent"]
     restart: unless-stopped
     command: ["gateway", "run"] # never override the entrypoint (s6-overlay /init)
-    mem_limit: 1280m
-    memswap_limit: 1280m
+    mem_limit: 2g # chief gateway + one on-demand Kanban worker (kanban.max_in_progress: 1)
+    memswap_limit: 2g
     cpus: 2.0
     logging: *logging
     ports:
       - "127.0.0.1:8642:8642" # OpenAI-compatible API = full terminal access; key required
     volumes:
-      - ./data/hermes:/opt/data # HERMES_HOME (config.yaml, .env, SOUL.md, state.db, sessions)
+      - ./data/hermes:/opt/data # HERMES_HOME: config, SOUL, profiles/, state.db, sessions, cron, kanban
       - ./skills:/opt/shared-skills:ro # skills.external_dirs - outside /opt/data on purpose
+      - ./tools/hermes-plugin/aios:/opt/aios/plugins/aios:ro # linked into every profile by hermes-setup
+      - ./config/hermes:/opt/aios/config:ro
+      - ./agents:/opt/aios/agents:ro
+      - ./workflows:/opt/aios/workflows:ro
+      - ./infra/hermes:/opt/aios/bin:ro
+      - ./data/sandbox/keys/id_ed25519:/opt/aios/ssh/id_ed25519:ro # make sandbox-keys
     environment:
       HERMES_UID: "1000"
       HERMES_GID: "1000"
@@ -252,9 +258,25 @@ services:
       HERMES_LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       HERMES_LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       HERMES_LANGFUSE_BASE_URL: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      # aios plugin -> Decision Service (routing/budget/escalation) and knowledge (context, MCP)
+      AIOS_DECISION_URL: http://decision:8080
+      DECISION_API_KEY: ${DECISION_API_KEY}
+      AIOS_KNOWLEDGE_URL: http://knowledge:8080
+      KNOWLEDGE_API_KEY: ${KNOWLEDGE_API_KEY}
+      AIOS_AGENTS_DIR: /opt/aios/agents
+      AIOS_DEFAULT_TENANT: ${AIOS_DEFAULT_TENANT:-}
+      EDGE_API_KEY: ${EDGE_API_KEY:-}
+      AIOS_CRON_DELIVER: ${AIOS_CRON_DELIVER:-local}
+      # terminal backend = sandbox over SSH (also used by the plugin's pre_verify aios-check)
+      TERMINAL_SSH_HOST: sandbox
+      TERMINAL_SSH_USER: agent
+      TERMINAL_SSH_PORT: "22"
+      TERMINAL_SSH_KEY: /opt/aios/ssh/id_ed25519
       TZ: ${TZ:-America/Sao_Paulo}
     depends_on:
       litellm: { condition: service_healthy }
+      decision: { condition: service_healthy }
+      knowledge: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8642/health')"]
       interval: 30s
