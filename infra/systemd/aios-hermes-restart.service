@@ -1,0 +1,6 @@
+[Unit]
+Description=AI Agent OS - restart Hermes gateway (bounded memory growth)
+[Service]
+Type=oneshot
+WorkingDirectory=%h/agent-system
+ExecStart=/usr/bin/docker compose --profile agent restart hermes

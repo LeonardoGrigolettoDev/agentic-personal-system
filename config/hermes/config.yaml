@@ -1,0 +1,57 @@
+# Hermes Agent config TEMPLATE. `make hermes-config` copies it once into data/hermes/config.yaml
+# (HERMES_HOME=/opt/data); after that Hermes owns the file and auto-migrates it with backups.
+# Validate with: make hermes-doctor   (runs `hermes doctor` + `hermes config check`)
+# Docs: https://hermes-agent.nousresearch.com/docs/  - see docs/research-hermes.md
+
+model:
+  provider: custom
+  base_url: http://litellm:4000/v1
+  key_env: LITELLM_API_KEY # budgeted LiteLLM virtual key (make litellm-keys), never the master key
+  default: tier3-code # Kimi K2.7 Code; escalate per task (§13)
+  context_length: 262144 # pinned: Hermes rejects models under 64K and aliases don't expose ctx
+
+providers:
+  litellm:
+    api: http://litellm:4000/v1
+    key_env: LITELLM_API_KEY
+    transport: chat_completions
+    default_model: tier3-code
+    # switch inside a session: /model custom:litellm:tier5-sonnet
+    # NEVER use local-qwen / decider-local here (4K ctx, below Hermes' 64K gate)
+
+auxiliary:
+  compression:
+    model: tier2-cheap # 1M ctx, $0.03/M - long histories get summarized cheaply
+    base_url: http://litellm:4000/v1
+
+delegation:
+  provider: custom
+  model: tier3-code
+  base_url: http://litellm:4000/v1
+  key_env: LITELLM_API_KEY
+  max_concurrent_children: 2 # RAM-bound on 16 GB
+  max_spawn_depth: 1
+
+terminal:
+  backend: local # runs inside the hermes container (the isolation boundary); no docker.sock mount
+
+approvals:
+  mode: manual # destructive tools ask first (§24.16)
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+
+skills:
+  external_dirs: [/opt/shared-skills] # ./skills in the repo, mounted read-only
+
+cron:
+  model: tier2-cheap
+  max_parallel_jobs: 1
+
+hooks_auto_accept: false
+# Phase 2 (after `hermes config check` confirms the schema on this version):
+# plugins: { enabled: [observability/langfuse] }
+# hooks:
+#   - { event: pre_tool_call, matcher: "terminal", command: /opt/data/hooks-bin/decision-guard.sh, timeout: 10, fail_closed: true }
+#   outbound: [{ url: http://decision:8080/v1/hermes-events, events: ["agent:end", "session:end"], secret_env: HERMES_WEBHOOK_SECRET }]

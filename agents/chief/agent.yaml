@@ -1,0 +1,37 @@
+# Agent definition (docs/ARCHITECTURE.md §4, §12). Seeded into the `agents`/`permissions` tables in Phase 2.
+agent: chief
+name: Chief / Orchestrator
+domain: chief
+description: >-
+  Coordena tarefas cruzadas: agenda → tarefas → projetos → estudos → delegação → consolidação → resposta.
+default_model: tier3-code
+max_tier: 6   # escalation ceiling without human approval
+
+allowed_tenants:
+  - nitro
+  - pessoal
+  - shared
+
+allowed_domains:
+  - engineering
+  - finance
+  - projects
+  - personal
+  - learning
+
+deny_domains: []
+
+allowed_tools:
+  - delegate
+  - knowledge_search
+  - calendar
+  - tasks
+
+max_cost_per_run: 0.50
+token_budget:
+  total: 30000
+  decision: 1000
+  retrieval: 3000
+  execution: 20000
+  final: 6000
+max_iterations: 8

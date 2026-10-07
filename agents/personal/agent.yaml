@@ -1,0 +1,32 @@
+# Agent definition (docs/ARCHITECTURE.md §4, §12). Seeded into the `agents`/`permissions` tables in Phase 2.
+agent: personal
+name: Personal
+domain: personal
+description: >-
+  Organização pessoal: agenda, rotinas, revisões diárias e semanais.
+default_model: tier2-cheap
+max_tier: 4   # escalation ceiling without human approval
+
+allowed_tenants:
+  - pessoal
+
+allowed_domains:
+  - personal
+
+deny_domains:
+  - engineering
+  - finance
+
+allowed_tools:
+  - calendar
+  - tasks
+  - knowledge_search
+
+max_cost_per_run: 0.10
+token_budget:
+  total: 30000
+  decision: 1000
+  retrieval: 3000
+  execution: 20000
+  final: 6000
+max_iterations: 8

@@ -1,0 +1,7 @@
+[Unit]
+Description=AI Agent OS - nightly Hermes restart
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target

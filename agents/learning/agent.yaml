@@ -1,0 +1,32 @@
+# Agent definition (docs/ARCHITECTURE.md §4, §12). Seeded into the `agents`/`permissions` tables in Phase 2.
+agent: learning
+name: Learning
+domain: learning
+description: >-
+  Estudos e metas: resumos de aulas, revisão espaçada, planos de estudo, pesquisas.
+default_model: tier2-cheap
+max_tier: 5   # escalation ceiling without human approval
+
+allowed_tenants:
+  - pessoal
+  - shared
+
+allowed_domains:
+  - learning
+
+deny_domains:
+  - finance
+
+allowed_tools:
+  - knowledge_search
+  - web_research
+  - transcription
+
+max_cost_per_run: 0.20
+token_budget:
+  total: 30000
+  decision: 1000
+  retrieval: 3000
+  execution: 20000
+  final: 6000
+max_iterations: 8

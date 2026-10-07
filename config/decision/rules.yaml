@@ -1,0 +1,19 @@
+# Deterministic decision rules (Tier 0/1). Evaluated before any model; a match answers with confidence 1.0.
+# `when` is an expr-lang expression over `state` (https://expr-lang.org). Hard permissions live in code/DB, not here.
+rules:
+  - name: domain-finance-keywords
+    question: domain
+    when: 'state.text matches "(?i)\\b(planilha|fatura|extrato|orçamento|investimento|imposto|boleto|cartão de crédito)\\b"'
+    answer: finance
+  - name: domain-engineering-keywords
+    question: domain
+    when: 'state.text matches "(?i)\\b(bug|stack ?trace|deploy|pull request|PR|refator|teste unitário|compila|endpoint|migration)\\b"'
+    answer: engineering
+  - name: domain-learning-keywords
+    question: domain
+    when: 'state.text matches "(?i)\\b(aula|curso|estudar|flashcard|resumo da aula|prova)\\b"'
+    answer: learning
+  - name: confirm-destructive
+    question: needs_confirmation
+    when: 'state.text matches "(?i)\\b(apagar|deletar|drop table|rm -rf|force push|transferir|pagar)\\b"'
+    answer: "true"

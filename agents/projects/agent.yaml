@@ -1,0 +1,33 @@
+# Agent definition (docs/ARCHITECTURE.md §4, §12). Seeded into the `agents`/`permissions` tables in Phase 2.
+agent: projects
+name: Projects
+domain: projects
+description: >-
+  Empresa e projetos pessoais: roadmap, decisões, status, próximos passos.
+default_model: tier2-flash
+max_tier: 5   # escalation ceiling without human approval
+
+allowed_tenants:
+  - nitro
+  - pessoal
+
+allowed_domains:
+  - projects
+  - engineering
+
+deny_domains:
+  - finance
+
+allowed_tools:
+  - tasks
+  - knowledge_search
+  - github
+
+max_cost_per_run: 0.30
+token_budget:
+  total: 30000
+  decision: 1000
+  retrieval: 3000
+  execution: 20000
+  final: 6000
+max_iterations: 8

@@ -1,0 +1,32 @@
+# Agent definition (docs/ARCHITECTURE.md §4, §12). Seeded into the `agents`/`permissions` tables in Phase 2.
+agent: finance
+name: Finance
+domain: finance
+description: >-
+  Finanças e análise de planilhas. Nunca executa transações; só analisa e recomenda.
+default_model: tier2-flash
+max_tier: 5   # escalation ceiling without human approval
+
+allowed_tenants:
+  - pessoal
+  - nitro
+
+allowed_domains:
+  - finance
+
+deny_domains:
+  - engineering
+
+allowed_tools:
+  - spreadsheets
+  - sql
+  - knowledge_search
+
+max_cost_per_run: 0.30
+token_budget:
+  total: 30000
+  decision: 1000
+  retrieval: 3000
+  execution: 20000
+  final: 6000
+max_iterations: 8

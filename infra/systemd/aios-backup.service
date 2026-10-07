@@ -1,0 +1,6 @@
+[Unit]
+Description=AI Agent OS - nightly backup (pg_dump + hermes state)
+[Service]
+Type=oneshot
+WorkingDirectory=%h/agent-system
+ExecStart=/usr/bin/bash %h/agent-system/infra/scripts/backup.sh

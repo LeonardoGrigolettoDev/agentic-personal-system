@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+data/
+backups/
+config/litellm/config.yaml
+knowledge/inbox/*
+knowledge/processed/*
+!knowledge/**/.gitkeep
+**/__pycache__/
+**/.venv/
+**/.pytest_cache/
+decision/bin/
+*.dump

@@ -1,0 +1,316 @@
+# AI Agent OS - V1 local control plane (docs/ARCHITECTURE.md §24).
+# Services talk by service name; nothing hardcodes localhost between containers.
+# Profiles:
+#   (none)         core: postgres, valkey, litellm, decision      - always on
+#   agent          hermes                                         - always on once configured
+#   media          whisper (one-shot jobs / optional server)
+#   observability  self-hosted Langfuse v4 (clickhouse, minio, worker, web) - off on 16 GB
+# Host services (not containers): Ollama (Vulkan on the 780M), reached via host.docker.internal.
+name: aios
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-host-gw: &host-gw
+  extra_hosts: ["host.docker.internal:host-gateway"]
+
+networks:
+  aios:
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }] # ufw allows only this subnet -> host Ollama :11434
+
+volumes:
+  pgdata: {}
+  valkeydata: {}
+  lf_ch_data: {}
+  lf_minio: {}
+
+x-lf-env: &lf-env
+  NEXTAUTH_URL: http://localhost:3000
+  DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD}@postgres:5432/langfuse?connection_limit=5
+  SALT: ${LANGFUSE_SALT}
+  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  CLICKHOUSE_MAX_OPEN_CONNECTIONS: "5"
+  REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD}@valkey:6379/2
+  REDIS_KEY_PREFIX: "langfuse:"
+  LANGFUSE_INGESTION_QUEUE_PROCESSING_CONCURRENCY: "4"
+  LANGFUSE_TRACE_UPSERT_WORKER_CONCURRENCY: "4"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  TZ: UTC
+
+services:
+  # ───────────────────────────── core ─────────────────────────────
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17-trixie # pg17: LiteLLM/Langfuse Prisma on pg18 unverified
+    restart: unless-stopped
+    shm_size: 256mb
+    mem_limit: 1g
+    memswap_limit: 1g
+    logging: *logging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PG_SUPERUSER_PASSWORD:?run make env}
+      POSTGRES_DB: postgres
+      AIOS_DB_PASSWORD: ${AIOS_DB_PASSWORD:?run make env}
+      AIOS_READER_PASSWORD: ${AIOS_READER_PASSWORD:?run make env}
+      LITELLM_DB_PASSWORD: ${LITELLM_DB_PASSWORD:?run make env}
+      LANGFUSE_DB_PASSWORD: ${LANGFUSE_DB_PASSWORD:?run make env}
+      TZ: UTC
+    command: >
+      postgres -c shared_buffers=256MB -c effective_cache_size=768MB -c work_mem=8MB
+      -c maintenance_work_mem=128MB -c max_connections=100 -c max_parallel_maintenance_workers=2
+      -c random_page_cost=1.1 -c wal_compression=on -c timezone=UTC
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1: the initdb temp server listens only on the socket, so this stays red until init is done
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports: ["127.0.0.1:${PG_HOST_PORT:-5432}:5432"] # host-side tools (ingest worker, psql); loopback only
+    networks: [aios]
+
+  valkey:
+    image: valkey/valkey:9.1-alpine
+    restart: unless-stopped
+    mem_limit: 320m
+    memswap_limit: 320m
+    logging: *logging
+    environment: { REDIS_PASSWORD: "${REDIS_PASSWORD:?run make env}" }
+    command:
+      - sh
+      - -c
+      - exec valkey-server --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes
+    volumes: [valkeydata:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      retries: 10
+    networks: [aios]
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.104.0
+    restart: unless-stopped
+    <<: *host-gw
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    logging: *logging
+    # config.yaml is rendered from config.template.yaml by `make litellm-config` (only providers with keys)
+    command: ["--config=/app/config.yaml", "--port=4000", "--num_workers=1", "--max_requests_before_restart=10000"]
+    volumes: ["./config/litellm/config.yaml:/app/config.yaml:ro"]
+    ports: ["127.0.0.1:4000:4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?run make env}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?run make env}
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@postgres:5432/litellm
+      STORE_MODEL_IN_DB: "True"
+      LITELLM_LOG: ERROR
+      LITELLM_MODE: PRODUCTION
+      REDIS_HOST: valkey
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      OLLAMA_API_BASE: http://host.docker.internal:11434
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_OTEL_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks: [aios]
+
+  decision:
+    build: ./decision
+    image: aios/decision:dev
+    restart: unless-stopped
+    <<: *host-gw # native Ollama /api/chat for logprobs
+    mem_limit: 128m
+    memswap_limit: 128m
+    logging: *logging
+    ports: ["127.0.0.1:8090:8080"]
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgresql://aios:${AIOS_DB_PASSWORD}@postgres:5432/aios?pool_max_conns=5
+      REDIS_ADDR: valkey:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: "1"
+      DECISION_API_KEY: ${DECISION_API_KEY:?run make env}
+      DECISION_BACKENDS: ${DECISION_BACKENDS:-rules,local}
+      DECISION_THRESHOLD: ${DECISION_THRESHOLD:-0.8}
+      DECISION_LOCAL_MODE: ${DECISION_LOCAL_MODE:-logprobs}
+      DECISION_RULES_FILE: /etc/decision/rules.yaml
+      DECISION_REQUIRED_MIGRATION: "005_costs_decisions"
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${DECISION_LITELLM_KEY:-}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_DECIDER_MODEL: ${OLLAMA_DECIDER_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      JEV_MODEL: ${JEV_MODEL:-jev-latest}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_DECISIONS_MODEL: ${OPENAI_DECISIONS_MODEL:-gpt-6-luna}
+      HERMES_WEBHOOK_SECRET: ${HERMES_WEBHOOK_SECRET:?run make env}
+    volumes: ["./config/decision/rules.yaml:/etc/decision/rules.yaml:ro"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/decision", "-healthcheck"]
+      interval: 15s
+      retries: 3
+      start_period: 10s
+    networks: [aios]
+
+  # ───────────────────────────── agent ─────────────────────────────
+  hermes:
+    image: nousresearch/hermes-agent:${HERMES_TAG:-v2026.9.24}
+    profiles: ["agent"]
+    restart: unless-stopped
+    command: ["gateway", "run"] # never override the entrypoint (s6-overlay /init)
+    mem_limit: 1280m
+    memswap_limit: 1280m
+    cpus: 2.0
+    logging: *logging
+    ports:
+      - "127.0.0.1:8642:8642" # OpenAI-compatible API = full terminal access; key required
+    volumes:
+      - ./data/hermes:/opt/data # HERMES_HOME (config.yaml, .env, SOUL.md, state.db, sessions)
+      - ./skills:/opt/shared-skills:ro # skills.external_dirs - outside /opt/data on purpose
+    environment:
+      HERMES_UID: "1000"
+      HERMES_GID: "1000"
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: "0.0.0.0"
+      API_SERVER_PORT: "8642"
+      API_SERVER_KEY: ${HERMES_API_KEY:?run make env}
+      LITELLM_API_KEY: ${HERMES_LITELLM_KEY:-} # guarded by `make up`; never the master key
+      HERMES_WEBHOOK_SECRET: ${HERMES_WEBHOOK_SECRET}
+      HERMES_LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      HERMES_LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      HERMES_LANGFUSE_BASE_URL: ${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      TZ: ${TZ:-America/Sao_Paulo}
+    depends_on:
+      litellm: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8642/health')"]
+      interval: 30s
+      start_period: 90s
+      retries: 3
+    networks: [aios]
+
+  # ───────────────────────────── media ─────────────────────────────
+  whisper:
+    image: ghcr.io/ggml-org/whisper.cpp:main-vulkan
+    profiles: ["media"]
+    user: "1000:1000"
+    group_add: ["${RENDER_GID:-992}"] # host 'render' group -> /dev/dri access
+    devices: ["/dev/dri:/dev/dri"]
+    mem_limit: 2g
+    logging: *logging
+    volumes:
+      - ./data/whisper-models:/models:ro
+      - ./knowledge/inbox:/audio
+    # resident server (when RAM allows): docker compose --profile media up -d whisper
+    command: ["whisper-server", "--host", "0.0.0.0", "--port", "8080", "-m", "/models/ggml-large-v3-turbo-q5_0.bin", "-l", "pt", "--convert"]
+    ports: ["127.0.0.1:8178:8080"]
+    networks: [aios]
+
+  # ───────────────────── observability (Langfuse v4) ─────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.4
+    profiles: ["observability"]
+    restart: unless-stopped
+    user: "101:101"
+    mem_limit: 1536m
+    logging: *logging
+    environment: { CLICKHOUSE_DB: default, CLICKHOUSE_USER: clickhouse, CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD}", TZ: UTC }
+    volumes:
+      - lf_ch_data:/var/lib/clickhouse
+      - ./infra/docker/clickhouse/low-mem.xml:/etc/clickhouse-server/config.d/low-mem.xml:ro
+      - ./infra/docker/clickhouse/low-mem-users.xml:/etc/clickhouse-server/users.d/low-mem-users.xml:ro
+    healthcheck: { test: "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1", interval: 5s, retries: 20 }
+    networks: [aios]
+
+  minio:
+    image: cgr.dev/chainguard/minio
+    profiles: ["observability"]
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment: { MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}" }
+    ports: ["127.0.0.1:9090:9000"]
+    mem_limit: 256m
+    logging: *logging
+    volumes: [lf_minio:/data]
+    networks: [aios]
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:${LANGFUSE_TAG:-4.54.0}
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 768m
+    logging: *logging
+    environment: { <<: *lf-env, NODE_OPTIONS: "--max-old-space-size=512" }
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+      minio: { condition: service_started }
+    networks: [aios]
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:${LANGFUSE_TAG:-4.54.0}
+    profiles: ["observability"]
+    restart: unless-stopped
+    mem_limit: 1g
+    logging: *logging
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      <<: *lf-env
+      NODE_OPTIONS: "--max-old-space-size=768"
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT: http://minio:9000
+      AUTH_DISABLE_SIGNUP: "true"
+      LANGFUSE_INIT_ORG_ID: aios
+      LANGFUSE_INIT_ORG_NAME: AIOS
+      LANGFUSE_INIT_PROJECT_ID: aios-dev
+      LANGFUSE_INIT_PROJECT_NAME: aios-dev
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_ADMIN_EMAIL}
+      LANGFUSE_INIT_USER_NAME: admin
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_ADMIN_PASSWORD}
+    depends_on: [langfuse-worker]
+    networks: [aios]
