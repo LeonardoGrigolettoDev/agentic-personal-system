@@ -1,0 +1,32 @@
+{
+  "state": {
+    "text": "Preciso corrigir um bug no endpoint de checkout que retorna 500 quando o carrinho está vazio, e escrever um teste que cubra o caso.",
+    "source": "manual"
+  },
+  "questions": [
+    {
+      "name": "domain",
+      "type": "choice",
+      "instructions": "Qual domínio de agente deve tratar esta tarefa?",
+      "criteria": {
+        "chief": "coordenação entre domínios, agenda, pedidos gerais",
+        "engineering": "programação, bugs, código, deploy, testes",
+        "finance": "finanças, planilhas, gastos, investimentos",
+        "projects": "status, roadmap e decisões de projetos",
+        "personal": "organização pessoal, rotinas, compromissos",
+        "learning": "estudos, cursos, aulas, metas de aprendizado"
+      }
+    },
+    {
+      "name": "complexity",
+      "type": "score",
+      "instructions": "Quão complexa é a tarefa?",
+      "levels": ["trivial", "simple", "medium", "hard", "critical"]
+    },
+    {
+      "name": "needs_research",
+      "type": "binary",
+      "instructions": "A tarefa exige pesquisa externa (web/documentação) antes de executar?"
+    }
+  ]
+}
