@@ -233,9 +233,11 @@ func (db *DB) ApplyGate(ctx context.Context, run *Run, g policy.Gate, nextTier i
 	return db.GetRun(ctx, run.SessionID)
 }
 
-// FinishRun records a run's outcome (succeeded | failed | cancelled); ended_at keeps the first close.
+// FinishRun records a run's outcome (succeeded | failed | cancelled); a gate 'failed' is never turned into
+// 'succeeded' by a later session close, and ended_at keeps the first close.
 func (db *DB) FinishRun(ctx context.Context, sessionID, status, taskType string) (*Run, error) {
-	tag, err := db.pool.Exec(ctx, `UPDATE agent_runs SET status = $2, task_type = coalesce(nullif($3,''), task_type),
+	tag, err := db.pool.Exec(ctx, `UPDATE agent_runs SET status = CASE WHEN status = 'failed' AND $2 = 'succeeded' THEN status ELSE $2 END,
+		task_type = coalesce(nullif($3,''), task_type),
 		ended_at = coalesce(ended_at, now()) WHERE session_id = $1`, sessionID, status, taskType)
 	if err != nil {
 		return nil, err

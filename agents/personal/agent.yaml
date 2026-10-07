@@ -1,4 +1,5 @@
-# Agent definition (docs/ARCHITECTURE.md §4, §12). Seeded into the `agents`/`permissions` tables in Phase 2.
+# Agent definition (docs/ARCHITECTURE.md §4, §12). Hermes profile of the same name runs it; the Decision Service
+# syncs it into agents/permissions (budget, max_tier) and the aios Hermes plugin enforces allowed_tools/tenants.
 agent: personal
 name: Personal
 domain: personal
@@ -17,10 +18,10 @@ deny_domains:
   - engineering
   - finance
 
-allowed_tools:
-  - calendar
+allowed_tools:   # categories: shell filesystem knowledge web_research delegate tasks messaging mcp
+  - knowledge
   - tasks
-  - knowledge_search
+  - messaging
 
 max_cost_per_run: 0.10
 token_budget:

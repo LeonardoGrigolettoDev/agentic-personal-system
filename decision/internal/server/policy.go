@@ -92,6 +92,26 @@ type routeResponse struct {
 	Classified        map[string]any `json:"classified,omitempty"`
 }
 
+var tenantCriteria = map[string]string{
+	"nitro":   "trabalho na empresa Nitro: apps, clientes, código e projetos do trabalho",
+	"pessoal": "vida pessoal: estudos, finanças pessoais, projetos pessoais, rotina, saúde",
+	"shared":  "geral, sem relação com trabalho ou vida pessoal específica",
+}
+
+// tenantOptions limits the tenant question to what the agent may access.
+func tenantOptions(a policy.Agent) map[string]string {
+	opts := map[string]string{}
+	for _, t := range a.AllowedTenants {
+		if d, ok := tenantCriteria[t]; ok {
+			opts[t] = d
+		}
+	}
+	if len(opts) == 0 {
+		return tenantCriteria
+	}
+	return opts
+}
+
 var domainCriteria = map[string]string{
 	"chief":       "coordenação entre domínios, agenda, pedidos gerais ou que não se encaixam em outro domínio",
 	"engineering": "programação, código, bugs, testes, deploy, infraestrutura, repositórios",
@@ -140,7 +160,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	}
 	choice := s.Policy.StartModel(agent, taskType, complexity, stats)
 	run, err := s.Ledger.CreateRun(ctx, ledger.Run{
-		SessionID: req.SessionID, Agent: agent.Slug, Tenant: req.Tenant, Domain: classified["domain"].(string),
+		SessionID: req.SessionID, Agent: agent.Slug, Tenant: classified["tenant"].(string), Domain: classified["domain"].(string),
 		TaskType: taskType, Complexity: complexity, HermesTaskID: req.TaskID, ParentSessionID: req.ParentSessionID,
 		Model: choice.Model, Tier: choice.Tier, RouteReason: choice.Reason, MaxCostUSD: agent.MaxCostPerRun,
 		MaxTokens: agent.TokenBudget.Total, MaxIterations: agent.MaxIterations, Deadline: req.Deadline, Summary: req.Text,
@@ -180,11 +200,22 @@ func (s *Server) validateRouteHints(req routeRequest) error {
 // classify asks the decision cascade only what the caller did not already provide.
 // Unanswerable questions fall back to safe defaults (agent's domain, domain's task type, medium).
 func (s *Server) classify(ctx context.Context, req routeRequest) (map[string]any, []decide.Step, [2]bool) {
-	out := map[string]any{"domain": req.Domain, "task_type": req.TaskType, "complexity": req.Complexity}
-	if req.Domain == "" && req.Agent != "" {
+	out := map[string]any{"domain": req.Domain, "task_type": req.TaskType, "complexity": req.Complexity, "tenant": req.Tenant}
+	if req.Domain == "" && req.Agent != "" && req.Agent != "chief" {
 		out["domain"] = s.Policy.Agent(req.Agent).Domain
 	}
 	var qs []decide.Question
+	if req.Tenant == "" {
+		opts := tenantOptions(s.Policy.Agent(req.Agent))
+		if len(opts) == 1 {
+			for t := range opts {
+				out["tenant"] = t
+			}
+		} else {
+			qs = append(qs, decide.Question{Name: "tenant", Type: decide.Choice, Criteria: opts,
+				Instructions: "A quem pertence este pedido: trabalho (Nitro), vida pessoal, ou é geral?"})
+		}
+	}
 	if out["domain"] == "" {
 		qs = append(qs, decide.Question{Name: "domain", Type: decide.Choice, Criteria: domainCriteria,
 			Instructions: "Qual domínio de agente deve tratar este pedido?"})
@@ -238,6 +269,9 @@ func (s *Server) classify(ctx context.Context, req routeRequest) (map[string]any
 	}
 	if out["domain"] == "" {
 		out["domain"] = "chief"
+	}
+	if out["tenant"] == "" {
+		out["tenant"] = "shared" // least privilege: only global knowledge until the tenant is known
 	}
 	if out["task_type"] == "" {
 		out["task_type"] = s.Policy.DomainDefaultTaskType[out["domain"].(string)]

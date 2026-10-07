@@ -1,0 +1,16 @@
+name: aios
+version: 1.0.0
+description: >-
+  AI Agent OS bridge: routes every LLM call through the Decision Service (routing policy, budget,
+  escalation, Jev), injects compiled knowledge context, enforces per-agent tool/tenant permissions
+  and runs the test/repair/escalate gate before a coding turn finishes. Hermes stays the runtime.
+author: agent-system
+provides_hooks:
+  - pre_llm_call
+  - post_api_request
+  - api_request_error
+  - pre_tool_call
+  - post_tool_call
+  - pre_verify
+  - on_skill_lifecycle
+  - on_session_finalize

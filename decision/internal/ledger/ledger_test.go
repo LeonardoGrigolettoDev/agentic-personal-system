@@ -12,7 +12,8 @@ import (
 )
 
 // Integration test against a migrated database (make test-integration sets it up):
-//   DECISION_TEST_DATABASE_URL=postgresql://aios@127.0.0.1:55432/aios go test ./internal/ledger/
+//
+//	DECISION_TEST_DATABASE_URL=postgresql://aios@127.0.0.1:55432/aios go test ./internal/ledger/
 func testDB(t *testing.T) (*DB, *policy.Policy) {
 	t.Helper()
 	url := os.Getenv("DECISION_TEST_DATABASE_URL")

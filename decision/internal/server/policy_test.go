@@ -166,6 +166,8 @@ func (c classifier) DecideTrace(_ context.Context, req decide.Request) ([]decide
 			a.Choice = "debugging"
 		case "complexity":
 			a.Choice = "medium"
+		case "tenant":
+			a.Choice = "nitro"
 		case "next_step":
 			a.Choice = c.nextStep
 			a.NeedsHuman = c.nextStep == ""
@@ -207,7 +209,8 @@ func TestRouteClassifiesAndIsStable(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("route %d %v", code, out)
 	}
-	if out["agent"] != "engineering" || out["task_type"] != "debugging" || out["model"] != "tier3-code" || out["validator"] != "command" {
+	if out["agent"] != "engineering" || out["task_type"] != "debugging" || out["model"] != "tier3-code" ||
+		out["validator"] != "command" || out["tenant"] != "nitro" {
 		t.Fatalf("route result %v", out)
 	}
 	if out["budget"].(map[string]any)["state"] != "ok" {
@@ -216,6 +219,24 @@ func TestRouteClassifiesAndIsStable(t *testing.T) {
 	_, again := call(t, h, "POST", "/v1/route", `{"session_id":"s1","text":"outra coisa"}`)
 	if again["existing"] != true || again["model"] != "tier3-code" {
 		t.Fatalf("second route must return the existing run: %v", again)
+	}
+}
+
+func TestRouteTenantClassification(t *testing.T) {
+	h := policyServer(t, newMem(), classifier{})
+	_, out := call(t, h, "POST", "/v1/route", `{"session_id":"t1","text":"bug no app","agent":"chief"}`)
+	if out["tenant"] != "nitro" {
+		t.Fatalf("classified tenant: %v", out["tenant"])
+	}
+	// personal may only access 'pessoal': no question asked, tenant fixed
+	_, out = call(t, policyServer(t, newMem(), nil), "POST", "/v1/route", `{"session_id":"t2","text":"rotina","agent":"personal"}`)
+	if out["tenant"] != "pessoal" {
+		t.Fatalf("single allowed tenant: %v", out["tenant"])
+	}
+	// unknown and unclassifiable -> least privilege
+	_, out = call(t, policyServer(t, newMem(), nil), "POST", "/v1/route", `{"session_id":"t3","text":"oi"}`)
+	if out["tenant"] != "shared" {
+		t.Fatalf("fallback tenant: %v", out["tenant"])
 	}
 }
 
