@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"aios/decision/internal/decide"
+	"aios/decision/internal/notify"
 	"aios/decision/internal/policy"
 	"aios/decision/internal/store"
 )
@@ -50,7 +51,8 @@ type Server struct {
 	Store             Store // nil: no persistence, /readyz fails
 	Cache             Cache // nil: no caching
 	Policy            *policy.Policy
-	Ledger            Ledger // nil: routing/budget/escalation endpoints answer 503
+	Ledger            Ledger         // nil: routing/budget/escalation endpoints answer 503
+	Notifier          *notify.Fanout // nil: no pushes
 	APIKey            string
 	HermesSecret      string
 	RequiredMigration string

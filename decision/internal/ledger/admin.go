@@ -71,22 +71,22 @@ type Approval struct {
 }
 
 // CreateApproval opens a pending approval for a run (deduplicated per session + kind + target model).
-func (db *DB) CreateApproval(ctx context.Context, run *Run, kind string, request map[string]any) (string, error) {
+// created is false when an identical pending approval already existed.
+func (db *DB) CreateApproval(ctx context.Context, run *Run, kind string, request map[string]any) (id string, created bool, err error) {
 	req, _ := json.Marshal(request)
-	var id string
-	err := db.pool.QueryRow(ctx, `
+	err = db.pool.QueryRow(ctx, `
 		SELECT id::text FROM approvals WHERE session_id = $1 AND kind = $2 AND status = 'pending'
 		  AND request->>'model' IS NOT DISTINCT FROM $3::jsonb->>'model' LIMIT 1`, run.SessionID, kind, req).Scan(&id)
 	if err == nil {
-		return id, nil
+		return id, false, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
+		return "", false, err
 	}
 	err = db.pool.QueryRow(ctx, `INSERT INTO approvals (run_id, agent_id, kind, session_id, request, expires_at)
 		VALUES ($1, (SELECT agent_id FROM agent_runs WHERE id = $1), $2, $3, $4, now() + interval '7 days')
 		RETURNING id::text`, run.ID, kind, run.SessionID, req).Scan(&id)
-	return id, err
+	return id, err == nil, err
 }
 
 // ResolveApproval approves or rejects; an approved 'tier' approval also moves the run to that model.

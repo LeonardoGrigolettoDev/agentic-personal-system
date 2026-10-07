@@ -82,11 +82,11 @@ func TestLedgerLifecycle(t *testing.T) {
 		t.Fatalf("gate escalate: %+v %v", run, err)
 	}
 
-	id, err := db.CreateApproval(ctx, run, "tier", map[string]any{"model": "tier7-fable"})
-	if err != nil || id == "" {
+	id, created, err := db.CreateApproval(ctx, run, "tier", map[string]any{"model": "tier7-fable"})
+	if err != nil || id == "" || !created {
 		t.Fatalf("approval: %v", err)
 	}
-	if dup, _ := db.CreateApproval(ctx, run, "tier", map[string]any{"model": "tier7-fable"}); dup != id {
+	if dup, again, _ := db.CreateApproval(ctx, run, "tier", map[string]any{"model": "tier7-fable"}); dup != id || again {
 		t.Fatalf("pending approval must be deduplicated: %s vs %s", dup, id)
 	}
 	if ok, _ := db.HasApproval(ctx, session, "tier7-fable"); ok {

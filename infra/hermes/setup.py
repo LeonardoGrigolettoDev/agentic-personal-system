@@ -157,6 +157,10 @@ def main() -> int:
     if not template:
         print(f"missing {AIOS}/config/config.yaml", file=sys.stderr)
         return 1
+    if os.environ.get("HERMES_LANGFUSE_PUBLIC_KEY") and os.environ.get("HERMES_LANGFUSE_SECRET_KEY"):
+        enabled = template.setdefault("plugins", {}).setdefault("enabled", [])
+        if "observability/langfuse" not in enabled:
+            enabled.append("observability/langfuse")  # bundled Hermes plugin: traces per turn/LLM call/tool
     report = []
 
     changed = write_config(HOME, template, args.dry_run)

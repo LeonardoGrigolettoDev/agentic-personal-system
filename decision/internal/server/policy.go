@@ -26,7 +26,7 @@ type Ledger interface {
 	Stats(ctx context.Context, taskType string) ([]policy.Stat, error)
 	ApplyGate(ctx context.Context, run *ledger.Run, g policy.Gate, nextTier int, failed bool, evidence any, decidedBy string) (*ledger.Run, error)
 	FinishRun(ctx context.Context, sessionID, status, taskType string) (*ledger.Run, error)
-	CreateApproval(ctx context.Context, run *ledger.Run, kind string, request map[string]any) (string, error)
+	CreateApproval(ctx context.Context, run *ledger.Run, kind string, request map[string]any) (string, bool, error)
 	ResolveApproval(ctx context.Context, id string, approve bool, by string, tierOf func(string) int) (*ledger.Approval, error)
 	HasApproval(ctx context.Context, sessionID, model string) (bool, error)
 	ListApprovals(ctx context.Context, status string) ([]ledger.Approval, error)
@@ -486,12 +486,21 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request) {
 
 	resp := gateResponse{Gate: g, DecidedBy: decidedBy}
 	if g.Action == policy.ActionAskHuman {
-		id, err := s.Ledger.CreateApproval(ctx, run, "tier", map[string]any{"model": g.NextModel, "tier": g.Tier,
+		id, created, err := s.Ledger.CreateApproval(ctx, run, "tier", map[string]any{"model": g.NextModel, "tier": g.Tier,
 			"reasons": g.Reasons, "from_model": run.Model})
 		if err != nil {
 			s.Log.ErrorContext(ctx, "create approval failed", "err", err)
 		}
 		resp.ApprovalID = id
+		if created {
+			s.Notifier.Send("Aprovação necessária ("+run.Agent+")", fmt.Sprintf(
+				"Tarefa: %s\nEscalonar %s -> %s.\nMotivos: %s\nAprovar: make approve id=%s  (rejeitar: make approve id=%s no=1)",
+				truncate(run.Summary, 300), run.Model, g.NextModel, strings.Join(g.Reasons, "; "), id, id), true)
+		}
+	}
+	if g.Action == policy.ActionFail {
+		s.Notifier.Send("Tarefa interrompida ("+run.Agent+")", fmt.Sprintf("Tarefa: %s\nMotivos: %s\nCusto: $%.4f",
+			truncate(run.Summary, 300), strings.Join(g.Reasons, "; "), run.CostUSD), false)
 	}
 	run, err = s.Ledger.ApplyGate(ctx, run, g, s.Policy.Tier(g.NextModel), failed, req.Evidence, decidedBy)
 	if err != nil {
@@ -670,6 +679,13 @@ func (s *Server) describePolicy(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"default_model": s.Policy.DefaultModel, "ladder": s.Policy.Ladder,
 		"models": s.Policy.Models, "task_types": s.Policy.TaskTypes, "agents": s.Policy.Agents})
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func contains(list []string, v string) bool {

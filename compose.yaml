@@ -184,6 +184,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_DECISIONS_MODEL: ${OPENAI_DECISIONS_MODEL:-gpt-6-luna}
       HERMES_WEBHOOK_SECRET: ${HERMES_WEBHOOK_SECRET:?run make env}
+      # approval/escalation notifications (optional): Telegram bot and/or ntfy topic URL
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      NTFY_URL: ${NTFY_URL:-}
     volumes:
       - ./config/decision/rules.yaml:/etc/decision/rules.yaml:ro
       - ./config/routing.yaml:/etc/aios/routing.yaml:ro
@@ -267,6 +271,9 @@ services:
       AIOS_DEFAULT_TENANT: ${AIOS_DEFAULT_TENANT:-}
       EDGE_API_KEY: ${EDGE_API_KEY:-}
       AIOS_CRON_DELIVER: ${AIOS_CRON_DELIVER:-local}
+      # optional messaging (deny-by-default allowlist): cron delivery + chatting with the chief
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${TELEGRAM_ALLOWED_USERS:-}
       # terminal backend = sandbox over SSH (also used by the plugin's pre_verify aios-check)
       TERMINAL_SSH_HOST: sandbox
       TERMINAL_SSH_USER: agent

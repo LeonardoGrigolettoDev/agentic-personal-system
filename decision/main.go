@@ -20,6 +20,7 @@ import (
 	"aios/decision/internal/jev"
 	"aios/decision/internal/ledger"
 	"aios/decision/internal/local"
+	"aios/decision/internal/notify"
 	"aios/decision/internal/openai"
 	"aios/decision/internal/policy"
 	"aios/decision/internal/rules"
@@ -87,6 +88,9 @@ func run() error {
 		return fmt.Errorf("policy: %w", err)
 	}
 	srv.Policy = pol
+	srv.Notifier = notify.FromEnv(os.Getenv, log)
+	defer srv.Notifier.Wait()
+	log.Info("notifications", "channels", len(srv.Notifier.Targets))
 	log.Info("policy loaded", "agents", len(pol.Agents), "task_types", len(pol.TaskTypes), "default_model", pol.DefaultModel)
 
 	if cfg.DatabaseURL != "" {

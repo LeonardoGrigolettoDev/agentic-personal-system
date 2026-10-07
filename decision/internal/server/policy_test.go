@@ -115,13 +115,16 @@ func (m *memLedger) FinishRun(ctx context.Context, id, status, _ string) (*ledge
 	return m.GetRun(ctx, id)
 }
 
-func (m *memLedger) CreateApproval(_ context.Context, run *ledger.Run, kind string, req map[string]any) (string, error) {
+func (m *memLedger) CreateApproval(_ context.Context, run *ledger.Run, kind string, req map[string]any) (string, bool, error) {
 	b, _ := json.Marshal(req)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	id := "appr-" + run.SessionID
+	if a, ok := m.approvals[id]; ok && a.Status == "pending" {
+		return id, false, nil
+	}
 	m.approvals[id] = &ledger.Approval{ID: id, Kind: kind, SessionID: run.SessionID, Request: b, Status: "pending"}
-	return id, nil
+	return id, true, nil
 }
 
 func (m *memLedger) ResolveApproval(_ context.Context, id string, approve bool, by string, tierOf func(string) int) (*ledger.Approval, error) {
