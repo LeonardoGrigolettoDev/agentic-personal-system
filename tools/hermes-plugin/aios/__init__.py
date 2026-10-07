@@ -187,10 +187,17 @@ def on_pre_tool_call(tool_name: str = "", args=None, session_id: str = "", **_):
     args = args if isinstance(args, dict) else {}
     s = _sessions.get(session_id) if session_id else None
     tenant = (s.tenant if s else None) or os.environ.get("HERMES_TENANT") or None
-    verdict = permissions.check_tool(_agent(), tool_name, args, tenant)
-    if not verdict.allow:
-        log.warning("blocked tool %s for %s: %s", tool_name, permissions.profile_name(), verdict.reason)
-        return {"action": "block", "message": "[aios] " + verdict.reason}
+    # Hermes' tool-search bridge wraps deferred tools as tool_call({calls: [{name, arguments}]}):
+    # check every inner call, so a deferred MCP tool can't slip past the tenant/permission guard
+    calls = [(tool_name, args)]
+    if tool_name == "tool_call":
+        calls = [(c.get("name", ""), c.get("arguments") if isinstance(c.get("arguments"), dict) else {})
+                 for c in args.get("calls") or [] if isinstance(c, dict)]
+    for name, call_args in calls:
+        verdict = permissions.check_tool(_agent(), name, call_args, tenant)
+        if not verdict.allow:
+            log.warning("blocked tool %s for %s: %s", name, permissions.profile_name(), verdict.reason)
+            return {"action": "block", "message": "[aios] " + verdict.reason}
     if s and s.budget_state == "exhausted" and tool_name not in WRAP_UP_TOOLS:
         return {"action": "block", "message": "[aios] orçamento da tarefa esgotado: finalize com um relatório "
                                               "(kanban_complete/kanban_block) sem executar novas ferramentas."}

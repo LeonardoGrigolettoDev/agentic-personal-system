@@ -134,3 +134,17 @@ def test_test_results_are_remembered(plugin, services, monkeypatch):
     ctx.hooks["pre_verify"](session_id="s9", coding=True, attempt=0, changed_paths=["a.go"])
     ev = decision.body("/v1/gate")["evidence"]
     assert ev["validation"] == "fail" and ev["tests"]["exit_code"] == 1
+
+
+def test_tool_search_bridge_is_unwrapped(plugin, services, monkeypatch):
+    _, ctx = plugin
+    decision, _ = services
+    decision.routes[("POST", "/v1/route")] = {**ROUTE, "agent": "engineering", "tenant": "nitro"}
+    monkeypatch.setenv("HERMES_PROFILE", "engineering")
+    ctx.hooks["pre_llm_call"](session_id="s10", user_message="bug")
+    wrapped = {"calls": [{"name": "web_search", "arguments": {"query": "x"}},
+                         {"name": "mcp__knowledge__knowledge_search", "arguments": {"tenant": "pessoal", "query": "x"}}]}
+    block = ctx.hooks["pre_tool_call"](tool_name="tool_call", args=wrapped, session_id="s10")
+    assert block and block["action"] == "block" and "isolamento" in block["message"]
+    ok = {"calls": [{"name": "mcp__knowledge__knowledge_search", "arguments": {"tenant": "nitro", "query": "x"}}]}
+    assert ctx.hooks["pre_tool_call"](tool_name="tool_call", args=ok, session_id="s10") is None

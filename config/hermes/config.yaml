@@ -58,6 +58,12 @@ mcp_servers:
     headers:
       Authorization: "Bearer ${KNOWLEDGE_API_KEY}"
 
+mcp_discovery_timeout: 10 # gateway waits for the knowledge MCP before the first agent build
+
+tools:
+  tool_search:
+    enabled: "off" # keep MCP tools eager: few tools, and the aios tenant guard must see real tool names
+
 plugins:
   enabled: [aios]
 
