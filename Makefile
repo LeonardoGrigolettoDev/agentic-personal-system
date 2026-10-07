@@ -11,7 +11,7 @@ WHISPER_MODEL := large-v3-turbo-q5_0
 .DEFAULT_GOAL := help
 .PHONY: help doctor env litellm-config models whisper-model up-core up down ps logs migrate psql litellm-keys \
         hermes-config hermes-shell hermes-doctor obs-up obs-down transcribe health smoke backup stats \
-        timers-install test kb-ingest kb-search kb-stats
+        timers-install test kb-ingest kb-search kb-stats kb-maintain
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -43,13 +43,14 @@ whisper-model: ## download the whisper.cpp model (large-v3-turbo q5_0, ~550 MB)
 	  -v "$$PWD/data/whisper-models:/models" ghcr.io/ggml-org/whisper.cpp:main-vulkan \
 	  download-ggml-model.sh $(WHISPER_MODEL) /models
 
-up-core: litellm-config ## start core in dependency order: db -> migrate -> litellm -> keys -> decision
+up-core: litellm-config ## start core in dependency order: db -> migrate -> litellm -> keys -> decision + knowledge
+	mkdir -p data/storage
 	$(DC) config -q
 	$(DC) up -d --wait postgres valkey
 	$(MAKE) --no-print-directory migrate
 	$(DC) up -d --wait litellm
 	bash infra/scripts/litellm-keys.sh
-	$(DC) up -d --build --wait decision
+	$(DC) up -d --build --wait decision knowledge
 
 up: up-core hermes-config ## core + Hermes agent
 	@source .env; [ -n "$$HERMES_LITELLM_KEY" ] || { echo "HERMES_LITELLM_KEY empty - run make litellm-keys"; exit 1; }
@@ -74,7 +75,7 @@ litellm-keys: ## create budgeted virtual keys (hermes/decision/kb) into .env
 	bash infra/scripts/litellm-keys.sh
 
 hermes-config: ## seed data/hermes (config.yaml, SOUL.md, .env) - never overwrites Hermes-owned files
-	@mkdir -p data/hermes data/whisper-models backups knowledge/inbox knowledge/processed
+	@mkdir -p data/hermes data/whisper-models data/storage backups knowledge/inbox knowledge/processed
 	@[ -f data/hermes/config.yaml ] || cp config/hermes/config.yaml data/hermes/config.yaml
 	@[ -f data/hermes/SOUL.md ] || cp agents/chief/SOUL.md data/hermes/SOUL.md
 	@source .env; umask 077; printf 'LITELLM_API_KEY=%s\nAPI_SERVER_KEY=%s\n' "$$HERMES_LITELLM_KEY" "$$HERMES_API_KEY" > data/hermes/.env
@@ -105,6 +106,7 @@ health: ## health endpoints
 	curl -fsS localhost:4000/health/liveliness && echo
 	curl -fsS localhost:8090/healthz && echo
 	curl -fsS localhost:8090/readyz && echo
+	curl -fsS localhost:8092/readyz && echo
 	-curl -fsS localhost:8642/health && echo
 
 smoke: health ## end-to-end smoke: local chat, embeddings, decision, hermes
@@ -144,3 +146,6 @@ kb-search: ## hybrid search: make kb-search tenant=pessoal q="..."
 
 kb-stats: ## KB document/chunk counts per tenant/domain
 	$(KB) stats
+
+kb-maintain: ## expire temporary/superseded memories, drop orphan chunks
+	$(KB) maintain

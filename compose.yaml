@@ -192,6 +192,33 @@ services:
       start_period: 10s
     networks: [aios]
 
+  knowledge:
+    build: ./workers/kb
+    image: aios/knowledge:dev
+    restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
+    logging: *logging
+    ports: ["127.0.0.1:8092:8080"]
+    environment:
+      KNOWLEDGE_API_KEY: ${KNOWLEDGE_API_KEY:?run make env}
+      KNOWLEDGE_TENANTS: ${KNOWLEDGE_TENANTS:-nitro,pessoal,shared}
+      KB_DATABASE_URL: postgresql://aios:${AIOS_DB_PASSWORD}@postgres:5432/aios
+      KB_POOL_MAX: "4"
+      LITELLM_BASE_URL: http://litellm:4000
+      KB_LITELLM_KEY: ${KB_LITELLM_KEY:-}
+      STORAGE_BACKEND: local
+      STORAGE_LOCAL_ROOT: /data/storage
+    volumes: ["./data/storage:/data/storage"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 15s
+      retries: 3
+      start_period: 20s
+    networks: [aios]
+
   # ───────────────────────────── agent ─────────────────────────────
   hermes:
     image: nousresearch/hermes-agent:${HERMES_TAG:-v2026.9.24}
