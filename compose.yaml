@@ -171,7 +171,10 @@ services:
       DECISION_THRESHOLD: ${DECISION_THRESHOLD:-0.8}
       DECISION_LOCAL_MODE: ${DECISION_LOCAL_MODE:-logprobs}
       DECISION_RULES_FILE: /etc/decision/rules.yaml
-      DECISION_REQUIRED_MIGRATION: "005_costs_decisions"
+      DECISION_REQUIRED_MIGRATION: "006_decision_ledger"
+      DECISION_POLICY_FILE: /etc/aios/routing.yaml
+      DECISION_AGENTS_DIR: /etc/aios/agents
+      BUDGET_TZ: ${TZ:-America/Sao_Paulo}
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_API_KEY: ${DECISION_LITELLM_KEY:-}
       OLLAMA_BASE_URL: http://host.docker.internal:11434
@@ -181,7 +184,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_DECISIONS_MODEL: ${OPENAI_DECISIONS_MODEL:-gpt-6-luna}
       HERMES_WEBHOOK_SECRET: ${HERMES_WEBHOOK_SECRET:?run make env}
-    volumes: ["./config/decision/rules.yaml:/etc/decision/rules.yaml:ro"]
+    volumes:
+      - ./config/decision/rules.yaml:/etc/decision/rules.yaml:ro
+      - ./config/routing.yaml:/etc/aios/routing.yaml:ro
+      - ./agents:/etc/aios/agents:ro
     depends_on:
       postgres: { condition: service_healthy }
       valkey: { condition: service_healthy }

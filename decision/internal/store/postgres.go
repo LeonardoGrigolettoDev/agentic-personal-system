@@ -31,6 +31,9 @@ func Open(ctx context.Context, url string) (*DB, error) {
 
 func (db *DB) Close() { db.pool.Close() }
 
+// Pool shares the connection pool with the ledger (one pool per process).
+func (db *DB) Pool() *pgxpool.Pool { return db.pool }
+
 // Ready pings the DB and checks that the required migration is applied.
 func (db *DB) Ready(ctx context.Context, migration string) error {
 	if err := db.pool.Ping(ctx); err != nil {

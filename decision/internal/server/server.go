@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"aios/decision/internal/decide"
+	"aios/decision/internal/policy"
 	"aios/decision/internal/store"
 )
 
@@ -48,6 +49,8 @@ type Server struct {
 	Engine            Decider
 	Store             Store // nil: no persistence, /readyz fails
 	Cache             Cache // nil: no caching
+	Policy            *policy.Policy
+	Ledger            Ledger // nil: routing/budget/escalation endpoints answer 503
 	APIKey            string
 	HermesSecret      string
 	RequiredMigration string
@@ -65,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.Handle("POST /v1/decide", RequireBearer(s.APIKey, http.HandlerFunc(s.decide)))
 	mux.HandleFunc("POST /v1/hermes-events", s.hermesEvent)
+	s.policyRoutes(mux)
 	return s.logRequests(mux)
 }
 

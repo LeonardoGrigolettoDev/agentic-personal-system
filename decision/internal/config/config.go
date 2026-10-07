@@ -24,6 +24,9 @@ type Config struct {
 	DecideTimeout     time.Duration
 	HermesSecret      string
 	LogLevel          string
+	PolicyFile        string
+	AgentsDir         string
+	BudgetTZ          string
 
 	LiteLLMBaseURL string
 	LiteLLMAPIKey  string
@@ -53,6 +56,9 @@ func Load() (Config, error) {
 		RequiredMigration: env("DECISION_REQUIRED_MIGRATION", "005_costs_decisions"),
 		HermesSecret:      os.Getenv("HERMES_WEBHOOK_SECRET"),
 		LogLevel:          env("LOG_LEVEL", "info"),
+		PolicyFile:        env("DECISION_POLICY_FILE", "/etc/aios/routing.yaml"),
+		AgentsDir:         env("DECISION_AGENTS_DIR", "/etc/aios/agents"),
+		BudgetTZ:          env("BUDGET_TZ", env("TZ", "America/Sao_Paulo")),
 		LiteLLMBaseURL:    env("LITELLM_BASE_URL", "http://litellm:4000"),
 		LiteLLMAPIKey:     os.Getenv("LITELLM_API_KEY"),
 		OllamaBaseURL:     env("OLLAMA_BASE_URL", "http://host.docker.internal:11434"),

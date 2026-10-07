@@ -18,8 +18,10 @@ import (
 	"aios/decision/internal/config"
 	"aios/decision/internal/decide"
 	"aios/decision/internal/jev"
+	"aios/decision/internal/ledger"
 	"aios/decision/internal/local"
 	"aios/decision/internal/openai"
+	"aios/decision/internal/policy"
 	"aios/decision/internal/rules"
 	"aios/decision/internal/server"
 	"aios/decision/internal/store"
@@ -80,6 +82,13 @@ func run() error {
 		DecideTimeout:     cfg.DecideTimeout,
 		Log:               log,
 	}
+	pol, err := policy.Load(cfg.PolicyFile, cfg.AgentsDir)
+	if err != nil {
+		return fmt.Errorf("policy: %w", err)
+	}
+	srv.Policy = pol
+	log.Info("policy loaded", "agents", len(pol.Agents), "task_types", len(pol.TaskTypes), "default_model", pol.DefaultModel)
+
 	if cfg.DatabaseURL != "" {
 		db, err := store.Open(ctx, cfg.DatabaseURL)
 		if err != nil {
@@ -87,6 +96,9 @@ func run() error {
 		}
 		defer db.Close()
 		srv.Store = db
+		led := ledger.New(db.Pool(), cfg.BudgetTZ)
+		srv.Ledger = led
+		go syncAgents(ctx, led, pol, log)
 	} else {
 		log.Warn("DATABASE_URL not set: decisions are not persisted")
 	}
@@ -127,6 +139,27 @@ func run() error {
 	err = httpSrv.Shutdown(shutdownCtx)
 	srv.Wait()
 	return err
+}
+
+// syncAgents mirrors agents/*/agent.yaml into the DB, retrying while Postgres comes up.
+func syncAgents(ctx context.Context, led *ledger.DB, pol *policy.Policy, log *slog.Logger) {
+	for attempt := 1; ; attempt++ {
+		err := led.SyncAgents(ctx, pol.Agents)
+		if err == nil {
+			log.Info("agents synced", "count", len(pol.Agents))
+			return
+		}
+		if attempt >= 30 || ctx.Err() != nil {
+			log.Error("agent sync gave up", "err", err)
+			return
+		}
+		log.Warn("agent sync failed, retrying", "attempt", attempt, "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
 }
 
 // buildEngines registers every backend that has what it needs; the rest are skipped.

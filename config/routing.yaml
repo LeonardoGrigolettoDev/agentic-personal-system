@@ -1,0 +1,107 @@
+# Routing, budget and escalation policy for the Decision Service (docs/ARCHITECTURE.md §6, §7, §13–15).
+# Hermes asks the Decision Service; the Decision Service answers from this file + agents/*/agent.yaml + learned stats.
+# Prices: USD per 1M tokens (docs/research-litellm.md, 2026-10-07). Used for the cost ledger and budget checks.
+
+default_model: tier3-code          # when a session has no run yet
+escalate_after_failures: 2         # consecutive validation failures on one tier -> escalate
+low_confidence: 0.5                # gate evidence confidence below this -> escalate
+budget_warn_ratio: 0.8             # budget state 'warn' from 80% of any limit
+
+learning:
+  min_samples: 10                  # finished runs per (task_type, model) before stats override policy
+  target_success_rate: 0.8         # a cheaper model is preferred only at/above this success rate
+
+# Escalation ladder (§7 cheap -> medium -> strong -> frontier). Order matters.
+ladder: [tier2-cheap, tier2-flash, tier3-code, tier4-pro, tier4-k3, tier5-sonnet, tier6-opus, tier7-fable]
+
+models:
+  local-qwen:   { tier: 2, price: { input: 0.00, output: 0.00 } }
+  tier2-cheap:  { tier: 2, price: { input: 0.03, output: 0.13 } }
+  tier2-flash:  { tier: 2, price: { input: 0.30, output: 1.20, cache_read: 0.03 } }
+  tier3-code:   { tier: 3, price: { input: 0.95, output: 4.00, cache_read: 0.19 } }
+  tier4-pro:    { tier: 4, price: { input: 1.32, output: 3.96, cache_read: 0.13 } }
+  tier4-k3:     { tier: 4, price: { input: 3.00, output: 15.00, cache_read: 0.30 } }
+  tier5-sonnet: { tier: 5, price: { input: 2.00, output: 10.00, cache_read: 0.20 } }
+  tier6-opus:   { tier: 6, price: { input: 4.00, output: 20.00, cache_read: 0.40 } }
+  tier7-fable:  { tier: 7, price: { input: 10.00, output: 50.00, cache_read: 1.00 }, requires_approval: true }
+
+# Task types: what the Decision Service classifies a request into, and where each starts.
+# complexity levels: trivial < simple < medium < hard < critical
+task_types:
+  conversation:
+    description: pergunta rápida, conversa, explicação curta
+    validator: none
+    tier_by_complexity: { trivial: tier2-cheap, simple: tier2-cheap, medium: tier2-flash, hard: tier3-code, critical: tier5-sonnet }
+  summary:
+    description: resumir, extrair, classificar, transformar texto, transcrições
+    validator: none
+    tier_by_complexity: { trivial: tier2-cheap, simple: tier2-cheap, medium: tier2-flash, hard: tier2-flash, critical: tier3-code }
+    skills: [knowledge/transcript_to_notes]
+  implementation:
+    description: implementar feature ou alteração de código
+    validator: command
+    tier_by_complexity: { trivial: tier2-flash, simple: tier3-code, medium: tier3-code, hard: tier4-pro, critical: tier5-sonnet }
+    skills: [coding/repository_analysis, coding/test_generation]
+  debugging:
+    description: investigar e corrigir bug, teste falhando, erro em produção
+    validator: command
+    tier_by_complexity: { trivial: tier3-code, simple: tier3-code, medium: tier3-code, hard: tier4-pro, critical: tier5-sonnet }
+    skills: [coding/debugging, coding/repository_analysis]
+  refactor:
+    description: refatorar sem mudar comportamento
+    validator: command
+    tier_by_complexity: { trivial: tier3-code, simple: tier3-code, medium: tier3-code, hard: tier4-pro, critical: tier5-sonnet }
+    skills: [coding/repository_analysis, coding/code_review]
+  code_review:
+    description: revisar diff, PR ou código
+    validator: none
+    tier_by_complexity: { trivial: tier3-code, simple: tier3-code, medium: tier3-code, hard: tier4-pro, critical: tier5-sonnet }
+    skills: [coding/code_review]
+  architecture:
+    description: decisão de arquitetura, design de sistema, mudança estrutural
+    validator: review
+    tier_by_complexity: { trivial: tier3-code, simple: tier4-pro, medium: tier4-pro, hard: tier5-sonnet, critical: tier6-opus }
+    skills: [coding/architecture_review, projects/decision_record]
+  research:
+    description: pesquisa na web/documentação com síntese de fontes
+    validator: review
+    tier_by_complexity: { trivial: tier2-flash, simple: tier2-flash, medium: tier3-code, hard: tier4-pro, critical: tier5-sonnet }
+    skills: [research/web_research, research/source_synthesis]
+  finance_analysis:
+    description: análise de planilhas, gastos, orçamento, investimentos
+    validator: schema
+    tier_by_complexity: { trivial: tier2-flash, simple: tier2-flash, medium: tier3-code, hard: tier4-pro, critical: tier5-sonnet }
+    skills: [finance/spreadsheet_analysis, finance/budget_review, finance/expense_categorization]
+  planning:
+    description: planejamento do dia/semana, revisão, organização pessoal
+    validator: none
+    tier_by_complexity: { trivial: tier2-cheap, simple: tier2-flash, medium: tier2-flash, hard: tier3-code, critical: tier3-code }
+    skills: [productivity/daily_planning, productivity/daily_review, productivity/weekly_review]
+  project_management:
+    description: status, roadmap, decisões e próximos passos de projetos
+    validator: none
+    tier_by_complexity: { trivial: tier2-flash, simple: tier2-flash, medium: tier3-code, hard: tier4-pro, critical: tier5-sonnet }
+    skills: [projects/project_status, projects/roadmap_update, projects/decision_record]
+  learning:
+    description: estudos, resumo de aula, plano de estudos, revisão espaçada
+    validator: none
+    tier_by_complexity: { trivial: tier2-cheap, simple: tier2-flash, medium: tier2-flash, hard: tier3-code, critical: tier4-pro }
+    skills: [knowledge/knowledge_capture, knowledge/transcript_to_notes]
+
+# Which agent (Hermes profile) handles each domain. Domains are the agent slugs (§4).
+domain_agent:
+  chief: chief
+  engineering: engineering
+  finance: finance
+  projects: projects
+  personal: personal
+  learning: learning
+
+# Domain defaults used when the classifier cannot tell the task type.
+domain_default_task_type:
+  chief: conversation
+  engineering: implementation
+  finance: finance_analysis
+  projects: project_management
+  personal: planning
+  learning: learning

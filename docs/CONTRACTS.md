@@ -1,225 +1,187 @@
 # Service contracts (V1)
 
-Binding interfaces between components, so they can be built in parallel. `docs/ARCHITECTURE.md`
-is the vision; this file is the implementation contract. Change it only together with every consumer.
+These are the binding interfaces between components. `docs/ARCHITECTURE.md` is the vision; this file is the implementation contract.
+
+## 0. Responsibility split (decided 2026-10-07)
+
+| Component | Owns | Does **not** own |
+|---|---|---|
+| **Hermes** (runtime) | agents (profiles), sessions, skills, cron, hooks, tools, execution, delegation, Kanban tasks/handoffs, webhooks, messaging | memory of record, billing, policy |
+| **Decision Service** (Go, the only Go) | Jev integration and typed decisions; **routing policy** (which tier/model, which agent); **budget** (ledger, limits, cost per task); **escalation** (gate done/repair/escalate/fail) | execution, task scheduling, agent loop |
+| **knowledge** (Python) | knowledge base, layered memory, Context Compiler, `storage://`, MCP tools | agent runtime |
+| **edge** (Python) | local media: ffmpeg, Whisper, local summarization (§22) | agent runtime |
+| **sandbox** (container) | isolated execution for Hermes' `terminal` (SSH backend) | decisions |
+| **LiteLLM** | gateway: providers, fallbacks, per-service virtual keys | policy |
+
+**No component other than Hermes runs an agent loop.** Hermes consults the Decision Service at the **gates** through its plugin `aios`.
 
 ## 1. Topology
 
-| Service | Lang | Dir | Container port → host (127.0.0.1) | Profile | Auth |
-|---|---|---|---|---|---|
-| postgres | — | — | 5432 → 5432 | core | roles `aios` (owner), `aios_reader` (SELECT knowledge) |
-| valkey | — | — | 6379 (internal) | core | `REDIS_PASSWORD` |
-| litellm | — | config/litellm | 4000 → 4000 | core | virtual keys per service |
-| decision | Go | decision/ | 8080 → 8090 | core | `Bearer DECISION_API_KEY` |
-| orchestrator | Go | orchestrator/ | 8080 → 8091 | core | `Bearer ORCHESTRATOR_API_KEY` |
-| knowledge | Python | workers/kb | 8080 → 8092 | core | `Bearer KNOWLEDGE_API_KEY` |
-| sandbox | — | workers/sandbox | 22 (internal only) | agent | SSH key in `data/sandbox/keys` |
-| hermes | — | config/hermes | 8642 → 8642 | agent | `Bearer HERMES_API_KEY` |
-| edge | Python | workers/edge | 8080 → 8093 | media | `Bearer EDGE_API_KEY` |
-| whisper | — | — | 8080 → 8178 | media | internal |
-| langfuse-* | — | — | 3000 → 3000 | observability | — |
-| Ollama | host | — | 11434 (host) | — | ufw: only 172.30.0.0/24 |
+| Service | Dir | Container port → host (127.0.0.1) | Profile |
+|---|---|---|---|
+| postgres | — | 5432 → 5432 | core |
+| valkey | — | 6379 internal | core |
+| litellm | config/litellm | 4000 → 4000 | core |
+| decision | decision/ | 8080 → 8090 | core |
+| knowledge | workers/kb | 8080 → 8092 | core |
+| hermes | config/hermes, tools/hermes-plugin | 8642 → 8642 | agent |
+| sandbox | workers/sandbox | 22 internal | agent |
+| edge | workers/edge | 8080 → 8093 | media |
+| whisper | — | 8080 → 8178 | media |
+| langfuse-* | — | 3000 → 3000 | observability |
+| Ollama | host | 11434 | — |
 
-Inside the compose network services call each other by name (`http://orchestrator:8080`). Every
-service reads config from env vars only (same names on Railway later). Every HTTP service exposes
-`GET /healthz` (process) and `GET /readyz` (dependencies), unauthenticated, and logs JSON to stdout.
+- Every HTTP service has `GET /healthz` (process) and `GET /readyz` (dependencies), both without auth.
+- Everything else requires `Authorization: Bearer <SERVICE>_API_KEY`.
+- Logs are JSON to stdout.
+- Configuration comes only from env vars, with the same names on Railway.
 
-**Integration ownership.** Builders do **not** edit `compose.yaml`, the root `Makefile`, `.env.example`,
-`infra/scripts/gen-env.sh` or `infra/scripts/litellm-keys.sh`. Each builder writes:
-- `infra/compose/<service>.snippet.yaml` – the service block(s) to merge into compose.yaml;
-- `mk/<component>.mk` – extra make targets (the root Makefile does `-include mk/*.mk`);
-- an `ENV` section in its README listing new variables (secret? generated? default?).
+Migrations: `001–005` core · `006–009` decision (policy/ledger) · `010–011` knowledge · `012` edge · `013` bench.
 
-## 2. Migrations
+## 2. Decision Service (`http://decision:8080`)
 
-Numbered ranges (each file runs in one transaction as role `aios`, via `infra/scripts/migrate.sh`):
-`001–005` core (done) · `006–009` orchestrator · `010–011` knowledge · `012` edge · `013` bench.
-A migration never edits an earlier one. Grants for `aios_reader` go in the migration that creates the table.
+### 2.1 Typed decisions (done)
 
-## 3. Decision Service (`decision`, done)
+`POST /v1/decide` runs the rules → local → Jev → OpenAI cascade. It returns typed answers with confidence and `needs_human`.
 
-`POST /v1/decide` → `{request_id, answers[], latency_ms, backend_trace}`.
+### 2.2 Routing policy
 
-Request: `{state, questions:[{name, type: binary|choice|score, instructions, criteria{}, levels[]}], threshold?, backends?, images?, run_id?, task_id?}`.
-Answer: `{name, type, choice, probability, score, confidence, probabilities{}, backend, refused, needs_human}`.
-Cascade order is `DECISION_BACKENDS` (rules,local[,jev][,openai]).
+`POST /v1/route` takes a task and decides tier, model, agent and needs (§6, §13):
 
-`POST /v1/hermes-events` takes a Hermes outbound webhook (HMAC `X-Hermes-Signature-256`) and writes it to `events`.
+```json
+{"session_id":"…","task_id":"…","text":"…","agent":"chief?","tenant":"pessoal?","domain":"?","task_type":"?","complexity":"?"}
+→ {"run_id":"uuid","domain":"engineering","agent":"engineering","task_type":"debugging","complexity":"medium",
+   "tier":3,"model":"tier3-code","needs_research":false,"needs_confirmation":false,
+   "budget":{"max_cost_usd":0.5,"max_iterations":8,"token_budget":{...}},"skills":["coding/debugging"],
+   "decision_trace":[...]}
+```
 
-## 4. Orchestrator (`orchestrator`, Go) — the §2 pipeline
+- Fields the caller already sends are not asked again.
+- The rest go to the cascade.
+- The tier comes from `config/routing.yaml`: `task_types[*].tier_by_complexity`, then domain overrides, then learned stats (once `min_samples` is reached), capped by the agent's `max_tier`.
+- It creates or updates the **run** in the ledger, keyed by `session_id`. Calling it again for the same session returns the current run's state; it does not reset it.
 
-It owns the task lifecycle. Every trigger becomes a task (§17).
+`GET /v1/runs/{session_id}` returns the run state: tier, model, cost, tokens, iterations, failures, status.
 
-### Task API
+`POST /v1/models/resolve` takes `{session_id, requested_model}` and returns `{model}`. It is the per-LLM-call path for the Hermes middleware, and it is cheap: no LLM involved.
+- It returns the run's current tier model, escalated if applicable.
+- With no run, it returns `default_model` from routing.yaml.
+- Requests for `tier7-*` without an approved approval are lowered to tier 6.
 
-| Method + path | Purpose |
+### 2.3 Budget
+
+`POST /v1/usage` records the usage of one LLM call:
+
+```json
+{"session_id","task_id?","model","input_tokens","output_tokens","cache_read_tokens","api_request_id","purpose?","success":true}
+→ {"cost_usd","run":{…totals},"budget":{"state":"ok|warn|exhausted","reason"}}
+```
+
+- Cost is computed from the prices in `config/routing.yaml` (`models.*.price`). It is written to `llm_calls` and aggregated into the run.
+- This call is idempotent on `api_request_id`.
+
+`POST /v1/budget/check` takes `{session_id}` and returns `{state: ok|warn|exhausted, reasons[], remaining:{usd,tokens,iterations}}`. It checks these limits:
+- run: `max_cost_usd`, `token_budget.total`, `max_iterations`, `deadline`;
+- agent: `max_cost_per_run`;
+- global: `budgets` table (day/month).
+
+### 2.4 Escalation (gate)
+
+`POST /v1/gate` is the decision gate (§7, §2 DONE/REPAIR/ESCALATE):
+
+```json
+{"session_id","evidence":{"validation":"pass|fail|none","failures":["…"],"tests":{"exit_code":1,"tail":"…"},
+ "confidence?":0.4,"architectural_change?":false,"critical?":false}}
+→ {"action":"done|repair|escalate|fail|ask_human","next_model":"tier4-pro","tier":4,"message":"…","reasons":[…]}
+```
+
+Deterministic guards are applied first:
+- an exhausted budget gives `fail`;
+- `escalate_after_failures` (default 2) consecutive failures at the same tier give `escalate`;
+- a next tier above `max_tier` gives `ask_human` (with an `approvals` row);
+- a validation `pass` gives `done`.
+
+Otherwise the Decision Service asks the cascade/Jev `next_step` (choice) using the evidence as state. An escalation updates the run's tier, and the next `models/resolve` call already returns the new model.
+
+`POST /v1/runs/{session_id}/finish` records the outcome `{status: succeeded|failed|cancelled, task_type?}` and closes the run, which feeds the cost-per-successful-task stats.
+
+`POST /v1/approvals/{id}` takes `{approve, by}`. `GET /v1/approvals?status=pending` lists approvals.
+
+### 2.5 Reports (§18)
+
+`GET /v1/reports/{costs|models|agents|loops|routes|escalations}` returns cost per successful task by `task_type × model`, the most expensive agent, the model that solves the most tasks, loops (repairs per run), escalation rate, and cost/success by route.
+
+## 3. Hermes (runtime)
+
+- **Profiles (agents §4):** `chief` (default home: gateway, API server, cron, Kanban dispatcher), plus `engineering`, `finance`, `projects`, `personal` and `learning`.
+  - Each profile has its own `SOUL.md`, `config.yaml` (toolsets, skills dirs) and memory.
+  - Only the **chief gateway** stays resident. Domain profiles run on demand as **Kanban workers**: `kanban_create(assignee=<domain>, tenant=<tenant>)`, spawned by the dispatcher.
+  - The **tenant** is the Kanban `tenant`; workers receive `HERMES_TENANT`.
+- **Plugin `aios`** (tools/hermes-plugin/aios, enabled in every profile):
+  - `register_system_prompt_section`: static AIOS policy, a stable prefix for the cache (§16).
+  - `llm_request` middleware: `model = decision /v1/models/resolve(session)` (routing + escalation).
+  - `post_api_request` / `api_request_error`: `decision /v1/usage`. A `warn`/`exhausted` budget notifies, and `exhausted` blocks new tools.
+  - `pre_llm_call` (first turn of the session): `decision /v1/route`, plus `knowledge /v1/context/compile`, which is injected as context (§9).
+  - `pre_tool_call`: permissions from `agents/<profile>/agent.yaml` (allowed/deny tools and domains, deny > allow), a secret-file guard (`.env`, `*.pem`, `id_*`), a destructive-command guard, and a tenant guard on knowledge MCP tools (the `tenant` argument must match `HERMES_TENANT`/the session).
+  - `pre_verify` (code edited): run `aios-task-check` in the sandbox, then `decision /v1/gate`. `repair` → `{"action":"continue","message":diagnosis}`. `escalate` → continue on the new model. `done` → finish. `fail`/`ask_human` → finish with a report.
+  - `on_session_end`: `decision /v1/runs/{id}/finish`.
+- **MCP:** `mcp_servers.knowledge.url = http://knowledge:8080/mcp/` with header `Authorization: Bearer ${KNOWLEDGE_API_KEY}`.
+- **Terminal:** `terminal.backend: ssh` → `sandbox:22`, user `agent`.
+- **Cron (§17):**
+  - `morning-review` 07:30, `daily-planning` 08:00, `engineering-review` 09:00, `project-review` 18:30, `learning-review` 20:00 and `daily-reflection` 22:30, plus `weekly-review` on Sundays at 19:00.
+  - Prompts live in `workflows/*.md` and are created by `make hermes-cron`. Webhooks use Hermes webhook routes (`messaging/webhooks`).
+- **Skills (§5):** `skills/<category>/<name>/SKILL.md`, mounted read-only and pointed to by `skills.external_dirs`.
+
+## 4. Knowledge (`http://knowledge:8080`)
+
+See `workers/kb/README.md`.
+
+- `POST /v1/search`, `/v1/context/compile`, `/v1/memories`, `/v1/memories/search`, `/v1/ingest`, `/v1/maintain`, `GET /v1/stats`.
+- `/mcp` serves the tools `knowledge_search`, `compile_context`, `memory_save`, `memory_search` and `ingest_note`.
+- `KNOWLEDGE_TENANTS` is the instance's ceiling. Per-session isolation is enforced by the `aios` `pre_tool_call` hook.
+
+## 5. Edge (`http://edge:8080`, §22 agent-edge)
+
+| Endpoint | Behavior |
 |---|---|
-| `POST /v1/tasks` | Create a task from `{title, description, tenant?, domain?, project?, task_type?, priority?, budget?, wait?:bool}`. Returns `{task_id, status}`. `wait=true` blocks until the task finishes or times out. |
-| `GET /v1/tasks/{id}` | Task, runs, gate history and result. |
-| `GET /v1/tasks?status=` | List tasks. |
-| `POST /v1/tasks/{id}/cancel` | Cancel a task. |
-| `POST /v1/approvals/{id}` | Resolve an approval with `{approve: bool, by}`. |
-| `GET /v1/approvals?status=pending` | List pending approvals. |
-| `POST /v1/webhooks/{source}` | HMAC-SHA256 over the raw body with `WEBHOOK_SECRET_<SOURCE>`, header `X-Signature-256: sha256=<hex>`. Writes an event, then creates a task according to `config/webhooks.yaml`. |
-| `POST /v1/permissions/check` | Takes `{session_id?, agent?, resource_type, resource, action}` and returns `{effect: allow\|deny\|ask, agent, reason}`. Rules: deny > ask > allow, no match means deny. An unknown session resolves to agent `chief`. This is the endpoint the Hermes `pre_tool_call` hook calls. |
-| `POST /v1/sessions/{session_id}/agent` | Register `{agent, run_id, tenant}`. The orchestrator calls this itself when it starts a run; it is exposed for tooling. |
-| `GET /v1/reports/{name}` | One report per §18 question: `costs`, `models`, `skills`, `loops`, `routes`, `escalations`, `agents`. |
+| `POST /extract_audio` | `{source: storage://…}` → `storage://media/processing/<id>.wav` (16 kHz mono) |
+| `POST /transcribe` | `{source, language='pt', diarize=false}` → `{text, segments[{start,end,text,speaker?}], txt_uri, srt_uri}` (whisper-server) |
+| `POST /summarize` | `{text \| transcript_uri, kind: summary\|notes\|tasks\|topics\|all, model='local-qwen'}` → JSON (map-reduce) |
+| `POST /process_video` | audio → transcript → summary |
+| `POST /embed` | `{texts[]}` → vectors |
+| `POST /pipeline` | `{source, tenant, domain?, ingest:true}`: the full chain, then `knowledge /v1/ingest` |
+| `POST /upload` | multipart → `storage://media/input/<id>.<ext>` |
 
-### Pipeline per task
+- Retention: `media/archive` keeps files for `MEDIA_RETENTION_DAYS` (30), and `processing` is cleared at the end of each job.
+- Diarization is an optional extra (pyannote). Without it, the call returns 501.
 
-Each step writes an `events` row, `type=task.<step>`.
+## 6. Sandbox (`sandbox:22`, §21)
 
-1. **DECIDE.** Decision Service questions:
-   - `domain` (choice of the 6 domains)
-   - `complexity` (score: trivial / simple / medium / hard / critical)
-   - `task_type` (choice from `config/routing.yaml`)
-   - `needs_research` (binary)
-   - `needs_confirmation` (binary)
+The sandbox is a container with sshd, user `agent`, toolchains (git, Go, Node + pnpm, Python + uv, ruff, eslint, tsc, duckdb) and `/workspace`. It has no docker.sock, no host mounts beyond `data/sandbox/*`, and runs with `cap_drop: ALL` plus the minimum sshd needs.
 
-   Rules come first, so the deterministic path costs zero tokens.
-2. **CONFIRM.** If `needs_confirmation` is set, the agent policy asks, or the cost estimate exceeds the budget: create an `approvals` row, notify, and park the task as `blocked`.
-3. **RETRIEVE + COMPILE.** `POST knowledge /v1/context/compile` (§5) within the `retrieval` token budget.
-4. **ROUTE.** `config/routing.yaml` maps (domain, complexity, task_type) to a starting tier alias. That is then adjusted by learned stats from `v_cost_per_successful_task`, but only once a route has at least `min_samples` runs. The result is capped by the agent's `max_tier`.
-5. **EXECUTE.** Run the domain agent through Hermes on session `run-<run_id>`:
-   - Register the session with the orchestrator before the run.
-   - Build the prompt in stable-prefix order (§16): `[static system][static agent SOUL + policy][skills hint][tools] ---- [memory][task + compiled context][tool results]`.
-   - Select the model per run. The builder verifies the exact Hermes mechanism: the API `model` field, the `/model custom:litellm:<alias>` command, or a session option.
-6. **VALIDATE.** Validators come from the `task_type` in routing.yaml:
-   - `command`: run checks in the sandbox over SSH (tests, lint, build). Exit code plus output tail.
-   - `review`: an LLM reviewer one tier above the executor returns a JSON verdict `{pass, issues[]}`.
-   - `schema`: the result must be JSON matching the schema.
-   - `none`
-7. **GATE.**
-   - Deterministic guards come first:
-     - budget exhausted (tokens, cost, iterations or deadline) → `failed` + notify;
-     - 2 consecutive failures at the same tier → escalate;
-     - a tier above the agent's `max_tier` → approval.
-   - Otherwise ask the Decision Service: `next_step` choice of `done | repair | escalate | fail`, with the validation result in its state.
-   - `repair` loops back to EXECUTE with the diagnosis on the same tier. `escalate` moves one tier up the ladder in `config/routing.yaml`. `done` finalizes.
-8. **FINALIZE.** Close `agent_runs`, then attribute cost: sum the LiteLLM spend logs for that run's virtual key and time window into `llm_calls` (`purpose` = step). Write the result and notify if `notify: true`, on failure, or when an approval is needed.
+Helpers:
+- `aios-task-start <id> <repo> [ref]`: clones into `/workspace/tasks/<id>` on branch `aios/<id>`.
+- `aios-task-check <id> [cmd…]`: runs tests or lint. Returns JSON `{exit_code, output_tail, command}`.
+- `aios-task-patch <id>`: writes `/workspace/patches/<id>.patch`.
+- `aios-task-destroy <id>`.
 
-### Scheduler
+## 7. Bench (`bench/`, §24.18)
 
-`config/schedules.yaml` holds cron entries (5-field, TZ `America/Sao_Paulo`): `{name, cron, task:{title, description_file: workflows/<x>.md, domain, tenant}, enabled}`. Default schedule from §17:
-- 07:30 morning-review
-- 08:00 daily-planning
-- 09:00 engineering-review
-- 18:30 project-review
-- 20:00 learning-review
-- 22:30 daily-reflection
-- weekly-review Sunday 19:00
+- 60 tasks: 10 simple, 10 medium, 10 debugging, 5 refactor, 5 agentic, 5 research, 5 finance and 5 media.
+- Each is submitted to **Hermes** (`POST /v1/runs` with `session_id=bench-<task>-<n>`) and checked deterministically or by an LLM judge.
+- Cost, tokens, iterations and tier come from `decision /v1/runs/{session_id}`. Results go to `bench_runs`.
+- `bench report` gives success and cost per success by category × model, plus a suggested `routing.yaml` diff.
 
-Missed runs during sleep are caught up once (latest only). A Valkey lock prevents double runs.
+## 8. LiteLLM virtual keys
 
-### Notifications
+Each service gets its own key, with a model allowlist and a budget:
 
-The `Notifier` interface has these implementations:
-- `telegram`: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`.
-- `ntfy`: `NTFY_URL`, optional.
-- `log`: always on.
-
-Every notification also writes an event of type `notification.sent`.
-
-### Agents and permissions sync
-
-On startup, and on `POST /v1/admin/sync`, the orchestrator upserts `agents/*/agent.yaml` (mounted read-only at `/etc/aios/agents`) into `agents` and `permissions`:
-- `allowed_domains`, `deny_domains` and `allowed_tools` map to permission rows.
-- `max_cost_per_run` maps to `agents.max_cost_per_run_usd`.
-
-## 5. Knowledge service (`knowledge`, Python FastAPI in workers/kb, `kb serve`)
-
-| Method + path | Purpose |
+| Key | Models |
 |---|---|
-| `POST /v1/search` | `{tenant, query, domain?, project?, k?, include_shared?}` → `{results:[{chunk_id, document_id, title, source_uri, heading_path, score, snippet}]}` |
-| `POST /v1/context/compile` | `{task, tenant, domain?, project?, budget_tokens}` → §9 Task Context `{task, project, current_state, relevant_decisions[], relevant_memories[], relevant_documents[], constraints[], token_estimate}`. Greedy fill by relevance until the budget is reached; never exceeds it. |
-| `POST /v1/memories` | Create a memory: `{tenant, scope, domain?, project?, kind, lifecycle, content, importance, source_run_id?}`. Embeds the content and returns `{id}`. A near-duplicate (cosine ≥ 0.92 in the same scope) supersedes the older memory instead of adding a new one. |
-| `GET /v1/memories?tenant&scope&domain&project&kind` | List memories. |
-| `POST /v1/memories/{id}/deprecate` | Deprecate a memory. |
-| `POST /v1/memories/search` | Vector search over live memories. |
-| `POST /v1/ingest` | `{tenant, domain?, source_uri, title, content, source_type, metadata}`. Used by edge and agents to store transcripts, summaries and notes. Idempotent on content hash. |
-| `GET /v1/stats` | Stats. |
-| `/mcp` | MCP Streamable HTTP for Hermes. Tools: `knowledge_search`, `compile_context`, `memory_save`, `memory_search`, `ingest_note`. The `tenant` argument is required and checked against the tenants allowed for the agent (resolved from the session via the orchestrator; default `pessoal` + `shared` for the interactive chief). |
-
-Maintenance runs as `kb maintain`, either via cron task or `make kb-maintain`:
-- expire `temporary` memories past `expires_at` (default 14d);
-- deprecate superseded memories;
-- vacuum orphaned chunks.
-
-Storage uses `kb.storage` and resolves `storage://<bucket>/<key>`. The `local` backend is `STORAGE_LOCAL_ROOT` (`data/storage`). The `s3` backend uses `STORAGE_S3_*` (R2 / Railway Bucket). Nothing stores absolute host paths.
-
-## 6. Edge worker (`edge`, Python FastAPI, workers/edge) — §22 agent-edge
-
-| Method + path | Purpose |
-|---|---|
-| `POST /extract_audio` | `{source: storage://… or upload}` → `storage://media/processing/<id>.wav` (16 kHz mono via ffmpeg) |
-| `POST /transcribe` | `{source, language='pt', diarize=false}` → `{transcript, segments[{start,end,text,speaker?}], srt_uri, txt_uri}`. Uses whisper-server at `WHISPER_URL`. |
-| `POST /summarize` | `{text \| transcript_uri, kind: summary\|notes\|tasks\|topics\|all, model='local-qwen'}` → structured JSON. Map-reduce over chunks for long text, via LiteLLM. |
-| `POST /process_video` | Extract audio, transcribe, then summarize. |
-| `POST /embed` | `{texts[]}` → vectors via LiteLLM `embed-local`. |
-| `POST /pipeline` | `{source, tenant, domain, ingest:true}`: full chain, then `knowledge /v1/ingest` for the transcript and the summary. |
-
-Media directories live under storage `media/{input,processing,archive}`, and `models/` is on the host. Retention: originals in `archive` are deleted after `MEDIA_RETENTION_DAYS` (30), transcripts and summaries are kept, and `processing` is cleared after each job.
-
-Diarization is the optional extra `diarize` (pyannote, `HF_TOKEN`) and is off by default. It is not installed in the default image, and requests with `diarize=true` without it return 501.
-
-## 7. Sandbox (`sandbox`, workers/sandbox) — §21 / §24.16 isolated coding worker
-
-This is a long-lived container with `sshd` and a non-root user `agent`. It holds the toolchains (git, Go, Node + pnpm, Python + uv, ruff, eslint, tsc, gofmt, make, jq, duckdb) and a `/workspace` volume. It has **no** docker.sock and no host mounts except `data/sandbox/workspace`.
-
-Hermes `terminal.backend: ssh` points at `sandbox`, so every tool command runs here and not in Hermes.
-
-Per-task lifecycle helpers live in `/usr/local/bin`. The orchestrator calls them over SSH:
-- `aios-task-start <task_id> <repo_url> [ref]`: clones into `/workspace/tasks/<task_id>` on branch `aios/<task_id>`.
-- `aios-task-check <task_id> [cmd…]`: runs the validators and prints JSON `{exit_code, output_tail}`.
-- `aios-task-patch <task_id>`: writes `git diff` to `/workspace/patches/<task_id>.patch` and prints its path.
-- `aios-task-destroy <task_id>`: removes the task directory.
-
-## 8. Hermes integration (config/hermes, skills/, tools/hermes-hooks/)
-
-- **One Hermes gateway** (RAM). Domain agents are personas: the orchestrator injects the agent's SOUL and policy per run. Interactive `make hermes-shell` runs as `chief`.
-- **Skills:** `skills/<category>/<name>/SKILL.md` for every skill in §5:
-  - coding: repository_analysis, debugging, code_review, architecture_review, test_generation
-  - finance: spreadsheet_analysis, budget_review, expense_categorization
-  - research: web_research, source_synthesis
-  - projects: project_status, roadmap_update, decision_record
-  - productivity: daily_planning, daily_review, weekly_review
-  - knowledge: knowledge_capture, memory_hygiene, transcript_to_notes
-
-  Deterministic work goes into `scripts/`.
-- **Hooks (§8):**
-  - `pre_tool_call` on everything: `orchestrator /v1/permissions/check` → exit 2 blocks. Also blocks reads and writes of `.env`, `*.pem`, `id_*`, `secrets*`.
-  - `post_tool_call` on file-edit tools: run the formatter by extension (gofmt / ruff format+check / eslint --fix / tsc --noEmit) in the sandbox.
-  - `post_tool_call` on test commands: POST the result as an event.
-  - `agent:end` / `session:end` outbound webhook: decision `/v1/hermes-events`.
-  - Stop: notify through the orchestrator.
-- **MCP:** register `knowledge` at `http://knowledge:8080/mcp` with `Bearer KNOWLEDGE_API_KEY`.
-- **Plugin `aios_context`:** `pre_llm_call` injects compiled context for interactive sessions that the orchestrator did not start.
-- **Langfuse plugin:** enabled when `LANGFUSE_PUBLIC_KEY` is set.
-
-## 9. Bench (`bench/`, Python) — §24.18
-
-The task suite lives in `bench/tasks/<category>/*.yaml`:
-- 10 simple
-- 10 medium
-- 10 debugging
-- 5 refactor
-- 5 agentic
-- 5 research
-- 5 finance
-- 5 media
-
-Each task has `prompt`, fixtures, and a deterministic `check` (command / regex / json-schema), or an `llm_judge` rubric. `bench run [--category] [--repeat]` submits the tasks through orchestrator `/v1/tasks` and records them in `bench_runs` (migration 013). `bench report` prints:
-- success rate and cost per success by category × model;
-- tokens, iterations and tool calls;
-- a recommended `routing.yaml` diff.
-
-## 10. LiteLLM virtual keys
-
-There is one key per service, created by `infra/scripts/litellm-keys.sh` with a model allowlist and a budget:
-- `HERMES_LITELLM_KEY`: tiers 2–6
-- `DECISION_LITELLM_KEY`: local and tier2-cheap
-- `KB_LITELLM_KEY`: embed and local plus tier 2
-- `ORCHESTRATOR_LITELLM_KEY`: reviewer and validator, tiers 2–6
-- `EDGE_LITELLM_KEY`: local-qwen, embed-local and tier 2
+| `HERMES_LITELLM_KEY` | tiers 2–6 |
+| `DECISION_LITELLM_KEY` | local + tier2-cheap |
+| `KB_LITELLM_KEY` | embed + local + tier 2 |
+| `EDGE_LITELLM_KEY` | local-qwen, embed-local, tier 2 |
+| `BENCH_LITELLM_KEY` | judge, tier 5 |
 
 Tier 7 needs an approval.

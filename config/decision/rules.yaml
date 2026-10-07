@@ -17,3 +17,24 @@ rules:
     question: needs_confirmation
     when: 'state.text matches "(?i)\\b(apagar|deletar|drop table|rm -rf|force push|transferir|pagar)\\b"'
     answer: "true"
+  # task type (only unambiguous phrasings; anything else goes to the classifier)
+  - name: task-debugging
+    question: task_type
+    when: 'state.text matches "(?i)\\b(bug|stack ?trace|exce(ç|c)ão|teste(s)? (falhando|quebrado)|erro (500|404)|panic:|traceback)\\b"'
+    answer: debugging
+  - name: task-code-review
+    question: task_type
+    when: 'state.text matches "(?i)\\b(revis(e|ar|ão) (o |do |esse |este )?(pr|pull request|diff|código))\\b"'
+    answer: code_review
+  - name: task-refactor
+    question: task_type
+    when: 'state.text matches "(?i)\\brefator(ar|e|ação)\\b"'
+    answer: refactor
+  - name: task-summary
+    question: task_type
+    when: 'state.text matches "(?i)\\b(resum(a|ir|o) (a|o|esta|este|essa|esse)? ?(aula|reunião|vídeo|áudio|transcrição|texto|artigo))\\b"'
+    answer: summary
+  - name: task-finance
+    question: task_type
+    when: 'state.text matches "(?i)\\b(planilha|fatura|extrato|gastos do mês|orçamento mensal)\\b"'
+    answer: finance_analysis
