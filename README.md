@@ -96,19 +96,29 @@ logs do LiteLLM e os relatórios do Decision Service (`make report`). Para o Lan
 
 ## Setup (uma vez)
 
-```bash
-# 1. Pacotes de sistema (revise o script antes!): Docker, ffmpeg, jq, gh, psql, Ollama (Vulkan), ufw
-sudo bash infra/scripts/bootstrap-host.sudo.sh
-#    → faça LOGOUT/LOGIN (grupos docker e render)
+Roda em **Linux** (Ubuntu 24.04 / Mint 22, como este ThinkPad) e em **Windows via WSL2 + Docker Desktop**. No
+Windows, tudo abaixo roda dentro do Ubuntu do WSL2; só o passo 0 é no Windows. Detalhes: `docs/RUNBOOK.md` §1.
 
-# 2. Verificar o host
+```bash
+# 0. (só Windows) PowerShell como administrador, na sua conta: WSL2 + Ubuntu 24.04, .wslconfig e Docker Desktop
+#    powershell -ExecutionPolicy Bypass -File infra\windows\bootstrap-windows.ps1
+#    → reinicie se pedir; no Docker Desktop ligue Settings > Resources > WSL integration > Ubuntu-24.04;
+#      abra o Ubuntu, crie o usuário e clone o repo DENTRO dele (~/agent-system, nunca em /mnt/c)
+
+# 1. Pacotes de sistema (revise o script antes!). Linux: Docker, ffmpeg, jq, gh, psql, Ollama (Vulkan), ufw.
+#    WSL2: detecta sozinho e usa o Docker do Docker Desktop (sem engine, ufw, Vulkan ou Ollama)
+sudo bash infra/scripts/bootstrap-host.sudo.sh
+#    → Linux: faça LOGOUT/LOGIN (grupos docker e render). Windows: `wsl --shutdown` e reabra o Ubuntu
+
+# 2. Ferramentas de usuário (uv + Go em ~/.local) e verificação do host
+make tools
 make doctor
 
 # 3. Segredos + chaves de provedores
 make env                      # gera todos os segredos internos (inclui chaves de edge por tenant e por perfil)
 $EDITOR .env                  # cole ANTHROPIC/OPENROUTER/MOONSHOT/DEEPSEEK/OPENAI/TYPESAFE que tiver
 
-# 4. Modelos locais
+# 4. Modelos locais (no Windows, o Ollama fica para depois: só o modelo do whisper)
 make models whisper-model
 
 # 5. Subir
@@ -120,6 +130,7 @@ make stats                    # RAM real
 
 # 6. Rotina
 make timers-install           # backup 03:00 + restart do Hermes 04:00 (systemd --user)
+#    Windows: powershell -ExecutionPolicy Bypass -File infra\windows\register-tasks.ps1 (Agendador de Tarefas)
 make edge-up                  # opcional: whisper + edge (mídia)
 ```
 
@@ -173,6 +184,7 @@ workers/sandbox/                        imagem do sandbox + aios-check/aios-task
 workers/edge/                           worker de mídia (ffmpeg, whisper, resumo map-reduce, retenção)
 bench/                                  bateria da V1 (tarefas, fixtures, runner, relatório)
 infra/{scripts,docker,hermes,systemd}/  bootstrap, env, migrate, backup, setup do Hermes, timers
+infra/windows/                          Windows: bootstrap (WSL2, .wslconfig, Docker Desktop) e tarefas agendadas
 infra/railway/                          kit da V2 (Railway, edge-gw via Tailscale, backup em bucket)
 migrations/                             schema versionado (001–006 core/decision, 013 bench)
 mk/*.mk                                 alvos make por componente

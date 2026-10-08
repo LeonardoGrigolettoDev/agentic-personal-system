@@ -7,25 +7,44 @@ KB := $(UV) run --project workers/kb kb
 OLLAMA_CHAT := qwen3:4b-instruct-2507-q4_K_M
 OLLAMA_EMBED := qwen3-embedding:0.6b
 WHISPER_MODEL := large-v3-turbo-q5_0
+WHISPER_MODEL_SHA256 := 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
+# Windows: the repo runs inside WSL2 (Ubuntu) with Docker Desktop; override with IS_WSL=1/0
+IS_WSL ?= $(shell grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null && echo 1 || echo 0)
 
 .DEFAULT_GOAL := help
 HERMES_PY := /opt/hermes/.venv/bin/python
-.PHONY: help doctor env litellm-config models whisper-model up-core up down ps logs migrate psql litellm-keys \
+.PHONY: help tools doctor env litellm-config models whisper-model up-core up down ps logs migrate psql litellm-keys \
         hermes-setup hermes-shell hermes-doctor obs-up obs-down transcribe health smoke backup stats \
         timers-install test kb-ingest kb-search kb-stats kb-maintain kb-project kb-projects
 
 help: ## list targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-doctor: ## check host prerequisites (after the sudo bootstrap + re-login)
+tools: ## user-space uv + Go in ~/.local (pinned, sha256-verified; no sudo)
+	bash infra/scripts/install-tools.sh
+
+doctor: ## check host prerequisites (after the bootstrap + re-login, or `wsl --shutdown` on Windows)
 	@ok(){ printf "  \033[32m✔\033[0m %s\n" "$$1"; }; bad(){ printf "  \033[31m✘\033[0m %s\n" "$$1"; }; \
-	for t in docker ffmpeg jq gh psql ollama; do command -v $$t >/dev/null && ok "$$t" || bad "$$t missing (run sudo bootstrap)"; done; \
-	[ -x $(UV) ] && ok "uv" || bad "uv missing"; [ -x $(GO) ] && ok "go" || bad "go missing"; \
-	docker compose version >/dev/null 2>&1 && ok "docker compose" || bad "docker compose not usable (re-login for docker group?)"; \
-	docker info >/dev/null 2>&1 && ok "docker daemon reachable" || bad "docker daemon not reachable as $$USER"; \
-	id -nG | grep -qw render && ok "in render group" || bad "not in render group (re-login)"; \
-	curl -fsS localhost:11434/api/version >/dev/null 2>&1 && ok "ollama $$(curl -s localhost:11434/api/version | jq -r .version)" || bad "ollama not answering on :11434"; \
-	vulkaninfo --summary 2>/dev/null | grep -q -i 'radv\|780M\|phoenix' && ok "vulkan GPU visible" || bad "vulkan GPU not detected"; \
+	info(){ printf "  ℹ %s\n" "$$1"; }; \
+	for t in docker ffmpeg jq gh psql make git; do command -v $$t >/dev/null && ok "$$t" || bad "$$t missing (run the sudo bootstrap)"; done; \
+	[ -x $(UV) ] && ok "uv" || bad "uv missing (make tools)"; [ -x $(GO) ] && ok "go" || bad "go missing (make tools)"; \
+	docker compose version >/dev/null 2>&1 && ok "docker compose" || bad "docker compose not usable"; \
+	docker info >/dev/null 2>&1 && ok "docker daemon reachable" || bad "docker daemon not reachable as $$USER (re-login / Docker Desktop running?)"; \
+	if [ "$(IS_WSL)" = 1 ]; then \
+	  info "WSL2 detected (Windows + Docker Desktop)"; \
+	  case "$(CURDIR)" in /mnt/*) bad "repo is on the Windows drive ($(CURDIR)): clone it inside WSL, e.g. ~/agent-system";; \
+	    *) ok "repo on the WSL filesystem";; esac; \
+	  docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -qi 'docker desktop' && ok "Docker Desktop engine" || info "engine is not Docker Desktop"; \
+	  grep -q '^COMPOSE_FILE=.*compose.wsl.yaml' .env 2>/dev/null && ok "compose.wsl.yaml active (whisper on CPU)" || bad "COMPOSE_FILE not set for WSL (run make env)"; \
+	  mem=$$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0); gib=$$((mem / 1073741824)); \
+	  [ "$$mem" -ge 7500000000 ] && ok "WSL/Docker VM memory $${gib} GiB" || bad "WSL/Docker VM has $${gib} GiB: set memory=10GB in %UserProfile%\\.wslconfig"; \
+	  [ -d /run/systemd/system ] && ok "systemd on (make timers-install works while WSL runs)" || info "systemd off: schedule backups with infra/windows/register-tasks.ps1"; \
+	  info "Ollama: not configured on Windows yet (local models and embeddings need it later)"; \
+	else \
+	  id -nG | grep -qw render && ok "in render group" || bad "not in render group (re-login)"; \
+	  curl -fsS localhost:11434/api/version >/dev/null 2>&1 && ok "ollama $$(curl -s localhost:11434/api/version | jq -r .version)" || bad "ollama not answering on :11434"; \
+	  vulkaninfo --summary 2>/dev/null | grep -q -i 'radv\|780M\|phoenix' && ok "vulkan GPU visible" || bad "vulkan GPU not detected"; \
+	fi; \
 	free -m | awk '/Mem:/{printf "  ℹ RAM available: %d MiB\n", $$7}'
 
 env: ## create .env and generate secrets
@@ -38,11 +57,12 @@ models: ## pull local Ollama models (chat 2.5 GB + embeddings 0.6 GB)
 	ollama pull $(OLLAMA_CHAT)
 	ollama pull $(OLLAMA_EMBED)
 
-whisper-model: ## download the whisper.cpp model (large-v3-turbo q5_0, ~550 MB)
-	mkdir -p data/whisper-models
-	[ -f data/whisper-models/ggml-$(WHISPER_MODEL).bin ] || docker run --rm --user $$(id -u):$$(id -g) \
-	  -v "$$PWD/data/whisper-models:/models" ghcr.io/ggml-org/whisper.cpp:main-vulkan \
-	  download-ggml-model.sh $(WHISPER_MODEL) /models
+whisper-model: ## download the whisper.cpp model (large-v3-turbo q5_0, ~550 MB, sha256-verified)
+	@mkdir -p data/whisper-models; f=data/whisper-models/ggml-$(WHISPER_MODEL).bin; \
+	if [ -f "$$f" ]; then echo "$$f: ok"; exit 0; fi; \
+	curl -fL --retry 3 -o "$$f.part" https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$(WHISPER_MODEL).bin; \
+	echo "$(WHISPER_MODEL_SHA256)  $$f.part" | sha256sum -c --quiet - || { rm -f "$$f.part"; echo "checksum mismatch"; exit 1; }; \
+	mv "$$f.part" "$$f"; echo "$$f: downloaded"
 
 up-core: litellm-config ## start core in dependency order: db -> migrate -> litellm -> keys -> decision + knowledge
 	mkdir -p data/storage
@@ -141,7 +161,8 @@ stats: ## container RAM/CPU + host free memory
 	@free -h | head -2
 	-@ollama ps
 
-timers-install: ## install systemd --user timers (nightly backup 03:00, hermes restart 04:00)
+timers-install: ## install systemd --user timers (nightly backup 03:00, hermes restart 04:00); Windows: infra/windows/register-tasks.ps1
+	@[ "$(IS_WSL)" = 0 ] || [ -d /run/systemd/system ] || { echo "systemd is off in this WSL distro: use infra/windows/register-tasks.ps1"; exit 1; }
 	mkdir -p ~/.config/systemd/user
 	cp infra/systemd/aios-*.{service,timer} ~/.config/systemd/user/
 	systemctl --user daemon-reload

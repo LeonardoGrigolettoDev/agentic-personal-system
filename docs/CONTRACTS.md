@@ -40,6 +40,9 @@ in the sandbox reaches neither Ollama, whisper, Postgres nor LiteLLM.
 - Everything else requires `Authorization: Bearer <SERVICE>_API_KEY`.
 - Logs are JSON to stdout.
 - Configuration comes only from env vars, with the same names on Railway.
+- Platforms: Linux (Docker Engine) and Windows via WSL2 + Docker Desktop. On WSL2, `.env` adds
+  `COMPOSE_FILE=compose.yaml:compose.wsl.yaml` (whisper on the CPU image, no `/dev/dri`); the repo lives on the WSL
+  filesystem, and host services (Ollama) are reached at `host.docker.internal` on both.
 
 Migrations: `001–005` core · `006–009` decision (policy/ledger) · `010–011` knowledge · `012` edge · `013` bench.
 

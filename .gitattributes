@@ -1,0 +1,24 @@
+# LF everywhere, whatever the client's core.autocrlf: the repo runs inside Linux containers and WSL2, and a
+# CRLF shell script, Dockerfile or SQL file breaks there ("bad interpreter: /bin/bash^M").
+* text=auto eol=lf
+
+# PowerShell runs on the Windows side; Windows PowerShell 5.1 and pwsh read LF fine.
+*.ps1 text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.JPG binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.xlsx binary
+*.wav binary
+*.mp3 binary
+*.m4a binary
+*.mp4 binary
+*.gz binary
+*.tgz binary
+*.zip binary
+*.dump binary
+*.bin binary

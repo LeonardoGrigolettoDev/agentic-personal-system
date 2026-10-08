@@ -1,0 +1,9 @@
+# Overrides for Windows: WSL2 + Docker Desktop. Enabled by `make env` in WSL through .env:
+#   COMPOSE_FILE=compose.yaml:compose.wsl.yaml   WHISPER_IMAGE=ghcr.io/ggml-org/whisper.cpp:main
+# Docker Desktop's VM has no AMD/Intel render node, so whisper runs on the CPU image without /dev/dri.
+# Everything else in compose.yaml works unchanged (ports stay on 127.0.0.1 of Windows; host.docker.internal
+# reaches the Windows host, where Ollama runs when it is used).
+services:
+  whisper:
+    devices: !reset []
+    group_add: !reset []

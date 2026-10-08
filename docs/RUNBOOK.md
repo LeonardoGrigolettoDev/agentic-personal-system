@@ -39,9 +39,54 @@ Todo serviço HTTP expõe `GET /healthz` e `GET /readyz` sem autenticação. O r
 
 ## 1. Primeira instalação
 
+Duas plataformas, mesmo fluxo: **Linux** (Ubuntu 24.04 / Mint 22) e **Windows com WSL2 + Docker Desktop**. No
+Windows, faça antes o §1.0; daí em diante, todos os comandos rodam no terminal do Ubuntu (WSL2), como no Linux.
+
+### 1.0 Windows: WSL2 + Docker Desktop
+
+1. PowerShell **como administrador, na sua própria conta**, dentro da pasta do repo baixado (ou só do script):
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File infra\windows\bootstrap-windows.ps1
+   ```
+
+   Ele é idempotente. Ele instala:
+   - o WSL2 e o Ubuntu 24.04 (sem abrir);
+   - o `%UserProfile%\.wslconfig`: `memory=10GB`, `swap=8GB`, `instanceIdleTimeout=-1`, `autoMemoryReclaim=gradual`.
+     Num PC de 16 GB isso deixa ~6 GB para o Windows. Ajuste com `-WslMemoryGB`;
+   - o Docker Desktop (winget).
+
+   Reinicie quando ele pedir e rode de novo.
+2. **Docker Desktop:** em Settings > General, ligue "Use the WSL 2 based engine" e "Start Docker Desktop when you
+   sign in". Em Settings > Resources > WSL integration, habilite `Ubuntu-24.04` e clique em Apply & restart.
+3. Abra o **Ubuntu 24.04**, crie o usuário e clone o repo **dentro do WSL** (`~/agent-system`):
+
+   ```bash
+   git clone git@github.com:LeonardoGrigolettoDev/agentic-personal-system.git ~/agent-system
+   ```
+
+   Nunca use `/mnt/c/...`: lá não há permissões Unix (chaves `600`, scripts executáveis) e o I/O é lento. O
+   `make doctor` acusa se o repo estiver lá.
+4. Siga o §1.2: o bootstrap detecta o WSL2. Depois, em PowerShell, rode `wsl --shutdown` (aplica o `.wslconfig` e
+   o systemd) e reabra o Ubuntu.
+
+Diferenças no Windows:
+- O `make env` grava `COMPOSE_FILE=compose.yaml:compose.wsl.yaml` e `WHISPER_IMAGE=…whisper.cpp:main`. O Docker
+  Desktop não tem `/dev/dri`, então o whisper roda em CPU.
+- As portas continuam só em `127.0.0.1` do Windows (Langfuse em `http://localhost:3000`).
+- O firewall do Windows substitui o `ufw`.
+- **Ollama:** ainda não configurado no Windows. Sem ele, os modelos locais (`local-qwen`, `decider-local`) e os
+  embeddings (`embed-local`, usados pela base de conhecimento) não respondem. Quando for a hora, ele roda no
+  Windows e os containers o alcançam em `host.docker.internal:11434`.
+- **Cofres do Obsidian** no disco do Windows: `make kb-ingest tenant=pessoal path=/mnt/c/Users/<você>/Obsidian/Pessoal`.
+  A trava de tenant usa o nome do cofre, então vale igual.
+- **Rotina:** `infra\windows\register-tasks.ps1` (sem admin) cria no Agendador de Tarefas o backup às 03:00 e o
+  restart do Hermes às 04:00. Se o PC estava desligado, rodam assim que possível. O `make timers-install` também
+  funciona com o systemd do WSL ligado.
+
 ### 1.1 Pré-requisitos
 
-- O `ufw` precisa estar **ativo com `deny (incoming)`**: o bootstrap aborta se não estiver, porque o Ollama escuta em `0.0.0.0`.
+- (Linux) O `ufw` precisa estar **ativo com `deny (incoming)`**: o bootstrap aborta se não estiver, porque o Ollama escuta em `0.0.0.0`.
   - `sudo ufw status verbose` mostra o estado.
   - Para ativar: `sudo ufw default deny incoming && sudo ufw enable`.
 - Disco livre: cerca de 15 GB (imagens, modelos e volumes).
@@ -60,7 +105,12 @@ O script instala:
 - o Ollama como serviço systemd, com override `OLLAMA_HOST=0.0.0.0`, contexto 4096, `KEEP_ALIVE=5m` e `MAX_LOADED_MODELS=1`;
 - a regra do `ufw`: só a sub-rede do compose (`172.30.0.0/24`) chega à porta 11434.
 
-**Depois, faça LOGOUT e LOGIN.** Os grupos `docker` e `render` só valem numa sessão nova.
+No WSL2 ele não instala Docker Engine, ufw, Vulkan nem Ollama: o Docker vem do Docker Desktop. Ele liga o
+systemd no `/etc/wsl.conf` e coloca você no grupo `docker`.
+
+**Depois, faça LOGOUT e LOGIN** (no Windows: `wsl --shutdown` e reabra o Ubuntu). Os grupos `docker` e `render` só
+valem numa sessão nova. Em seguida, instale as ferramentas de usuário (uv e Go em `~/.local`, versões fixas com
+sha256): `make tools`.
 
 ### 1.3 Verificar o host
 

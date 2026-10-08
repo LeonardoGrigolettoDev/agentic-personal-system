@@ -7,6 +7,7 @@
 #   bench          V1 test battery CLI (one-shot: make bench-run)
 #   observability  self-hosted Langfuse v4 (clickhouse, minio, worker, web) - off on 16 GB
 # Host services (not containers): Ollama (Vulkan on the 780M), reached via host.docker.internal.
+# Windows (WSL2 + Docker Desktop): compose.wsl.yaml on top of this file (COMPOSE_FILE in .env, set by make env).
 name: aios
 
 x-logging: &logging
@@ -350,7 +351,7 @@ services:
 
   # ───────────────────────────── media ─────────────────────────────
   whisper:
-    image: ghcr.io/ggml-org/whisper.cpp:main-vulkan
+    image: ${WHISPER_IMAGE:-ghcr.io/ggml-org/whisper.cpp:main-vulkan} # CPU image (:main) on WSL2, see compose.wsl.yaml
     profiles: ["media"]
     restart: unless-stopped
     user: "1000:1000"
@@ -362,7 +363,9 @@ services:
       - ./data/whisper-models:/models:ro
       - ./knowledge/inbox:/audio
     # resident server for edge (make edge-up); --tmp-dir: as uid 1000 the image's default (/app) is not writable
-    command: ["whisper-server", "--host", "0.0.0.0", "--port", "8080", "-m", "/models/ggml-large-v3-turbo-q5_0.bin",
+    # entrypoint set explicitly: the CPU image (:main) has ENTRYPOINT ["bash","-c"], the Vulkan one has none
+    entrypoint: ["whisper-server"]
+    command: ["--host", "0.0.0.0", "--port", "8080", "-m", "/models/ggml-large-v3-turbo-q5_0.bin",
               "-l", "pt", "--convert", "--tmp-dir", "/tmp"]
     ports: ["127.0.0.1:8178:8080"]
     healthcheck: # the image ships curl; /health is 503 while the model loads

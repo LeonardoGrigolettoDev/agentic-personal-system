@@ -40,5 +40,10 @@ set_if_empty LANGFUSE_INIT_PROJECT_PUBLIC_KEY "pk-lf-$(hex 16)"
 set_if_empty LANGFUSE_INIT_PROJECT_SECRET_KEY "sk-lf-$(hex 24)"
 set_if_empty LANGFUSE_ADMIN_EMAIL "$(git config user.email 2>/dev/null || echo admin@localhost)"
 set_if_empty RENDER_GID "$(getent group render | cut -d: -f3 || echo 992)"
+# Windows (WSL2 + Docker Desktop): compose.wsl.yaml on top (no /dev/dri; whisper on the CPU image)
+if [[ "${IS_WSL:-}" == 1 ]] || { [[ -z "${IS_WSL:-}" ]] && grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; }; then
+  set_if_empty COMPOSE_FILE "compose.yaml:compose.wsl.yaml"
+  set_if_empty WHISPER_IMAGE "ghcr.io/ggml-org/whisper.cpp:main"
+fi
 
 echo ".env ready. Paste the provider keys you have (ANTHROPIC/OPENROUTER/MOONSHOT/DEEPSEEK/OPENAI/TYPESAFE)."

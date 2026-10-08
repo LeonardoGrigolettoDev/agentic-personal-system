@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# One-time, idempotent host bootstrap for the AI Agent OS V1 (Linux Mint 22 "Wilma" = Ubuntu 24.04 noble).
+# One-time, idempotent host bootstrap for the AI Agent OS V1 (Ubuntu 24.04 noble: Linux Mint 22, or Ubuntu in WSL2).
 #   sudo bash infra/scripts/bootstrap-host.sudo.sh
-# Then LOG OUT and back in (docker/render group membership).
-# Installs: Docker Engine + Compose plugin, ffmpeg, jq, gh, postgresql-client, sqlite3, vulkan-tools,
-#           Ollama (system service, Vulkan on the Radeon 780M). Go and uv are user-space (already in ~/.local).
+# Then LOG OUT and back in (Linux) / `wsl --shutdown` from Windows and reopen Ubuntu (WSL2).
+# Linux: Docker Engine + Compose plugin, ffmpeg, jq, gh, postgresql-client, sqlite3, make, vulkan-tools,
+#        Ollama (system service, Vulkan on the Radeon 780M).
+# WSL2:  the same tools, but Docker comes from Docker Desktop (WSL integration) and there is no engine, ufw,
+#        Vulkan or Ollama here (Windows firewall; Ollama, when used, runs on the Windows side).
+# Go and uv are user-space: bash infra/scripts/install-tools.sh (no sudo).
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "Run with: sudo bash $0"; exit 1; }
 TARGET_USER="${SUDO_USER:?run via sudo from your normal user}"
 COMPOSE_SUBNET="172.30.0.0/24" # must match networks.aios in compose.yaml
-INSTALL_OLLAMA="${INSTALL_OLLAMA:-1}"
+IS_WSL=0
+grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null && IS_WSL=1
+INSTALL_OLLAMA="${INSTALL_OLLAMA:-$((1 - IS_WSL))}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-0}"
 log() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 
@@ -26,8 +31,18 @@ if [[ -n "$broken" ]]; then
   exit 1
 fi
 
+if [[ "$IS_WSL" == 1 ]]; then
+  log "WSL2 detected: Docker Desktop provides Docker; no engine, ufw, Vulkan or Ollama in this distro"
+  [[ "$INSTALL_OLLAMA" == 0 ]] || { echo "INSTALL_OLLAMA=1 is not supported in WSL2: run Ollama on Windows"; exit 1; }
+  command -v docker >/dev/null && docker version >/dev/null 2>&1 || {
+    echo "docker is not reachable from this distro. In Docker Desktop: Settings > Resources > WSL integration >"
+    echo "enable this distro (and 'Use the WSL 2 based engine'), apply, then rerun this script."
+    exit 1; }
+  docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -qi "docker desktop" ||
+    echo "WARNING: docker here is not Docker Desktop - a Docker Engine inside WSL also works, but is untested"
+  UFW_ACTIVE=0
 # ufw must default-deny incoming, because Ollama binds 0.0.0.0 so containers can reach it.
-if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+elif command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw status verbose | grep -q "deny (incoming)" || {
     echo "ufw is active but the default incoming policy is not 'deny'. Fix with: ufw default deny incoming"; exit 1; }
   UFW_ACTIVE=1
@@ -40,13 +55,14 @@ fi
 
 log "Base packages"
 apt-get update
-apt-get install -y ca-certificates curl wget gnupg zstd
-
-log "Docker apt repo (deb822, Suites=$CODENAME - Mint's own codename would break it)"
+apt-get install -y ca-certificates curl wget gnupg zstd make git openssh-client
 install -m 0755 -d /etc/apt/keyrings
-[[ -s /etc/apt/keyrings/docker.asc ]] || curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-cat >/etc/apt/sources.list.d/docker.sources <<EOF
+
+if [[ "$IS_WSL" == 0 ]]; then
+  log "Docker apt repo (deb822, Suites=$CODENAME - Mint's own codename would break it)"
+  [[ -s /etc/apt/keyrings/docker.asc ]] || curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  chmod a+r /etc/apt/keyrings/docker.asc
+  cat >/etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
 Suites: ${CODENAME}
@@ -54,6 +70,7 @@ Components: stable
 Architectures: ${ARCH}
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
+fi
 
 log "GitHub CLI apt repo"
 if [[ ! -s /etc/apt/keyrings/githubcli-archive-keyring.gpg ]]; then
@@ -67,31 +84,43 @@ echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gp
 
 log "Packages"
 apt-get update
-apt-get install -y \
-  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
-  ffmpeg jq gh postgresql-client sqlite3 vulkan-tools mesa-vulkan-drivers
+apt-get install -y ffmpeg jq gh postgresql-client sqlite3
 
-log "Docker daemon.json (published ports default to loopback; log rotation)"
-install -d -m 0755 /etc/docker
-DOCKER_RESTART=0
-if [[ ! -f /etc/docker/daemon.json ]]; then
-  cat >/etc/docker/daemon.json <<'EOF'
+if [[ "$IS_WSL" == 1 ]]; then
+  log "WSL: systemd on (user timers for backups) - needs 'wsl --shutdown' from Windows once"
+  if ! grep -qE '^\s*systemd\s*=\s*true' /etc/wsl.conf 2>/dev/null; then
+    { echo; echo "[boot]"; echo "systemd=true"; } >>/etc/wsl.conf
+    echo "systemd=true added to /etc/wsl.conf"
+  fi
+  log "Groups for ${TARGET_USER} (docker socket of the Docker Desktop integration)"
+  groupadd -f docker
+  usermod -aG docker "$TARGET_USER"
+else
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin \
+    vulkan-tools mesa-vulkan-drivers
+
+  log "Docker daemon.json (published ports default to loopback; log rotation)"
+  install -d -m 0755 /etc/docker
+  DOCKER_RESTART=0
+  if [[ ! -f /etc/docker/daemon.json ]]; then
+    cat >/etc/docker/daemon.json <<'EOF'
 {
   "ip": "127.0.0.1",
   "log-driver": "json-file",
   "log-opts": { "max-size": "10m", "max-file": "3" }
 }
 EOF
-  DOCKER_RESTART=1
-else
-  echo "daemon.json exists - left untouched (wanted: \"ip\": \"127.0.0.1\" + json-file log rotation)"
-fi
-systemctl enable --now containerd.service docker.service
-[[ "$DOCKER_RESTART" == 1 ]] && systemctl restart docker
+    DOCKER_RESTART=1
+  else
+    echo "daemon.json exists - left untouched (wanted: \"ip\": \"127.0.0.1\" + json-file log rotation)"
+  fi
+  systemctl enable --now containerd.service docker.service
+  [[ "$DOCKER_RESTART" == 0 ]] || systemctl restart docker
 
-log "Groups for ${TARGET_USER} (docker group = root-equivalent; render/video = GPU)"
-groupadd -f docker
-usermod -aG docker,render,video "$TARGET_USER"
+  log "Groups for ${TARGET_USER} (docker group = root-equivalent; render/video = GPU)"
+  groupadd -f docker
+  usermod -aG docker,render,video "$TARGET_USER"
+fi
 
 if [[ "$INSTALL_OLLAMA" == 1 ]]; then
   log "Ollama (official installer; Vulkan backend is used on gfx1103 - ROCm does not support the 780M)"
@@ -120,13 +149,19 @@ EOF
   fi
 fi
 
-if [[ "$INSTALL_TAILSCALE" == 1 ]]; then
+if [[ "$INSTALL_TAILSCALE" == 1 && "$IS_WSL" == 1 ]]; then
+  echo "Tailscale: install the Windows client instead (winget install Tailscale.Tailscale); WSL2 shares its tailnet."
+elif [[ "$INSTALL_TAILSCALE" == 1 ]]; then
   log "Tailscale (installer maps linuxmint -> ubuntu/noble)"
   command -v tailscale >/dev/null || curl -fsSL https://tailscale.com/install.sh | sh
   echo "Run 'sudo tailscale up' yourself to log in."
 fi
 
-log "Done. Now LOG OUT and back in, then run:"
+if [[ "$IS_WSL" == 1 ]]; then
+  log "Done. In Windows PowerShell run 'wsl --shutdown', reopen Ubuntu, then:"
+else
+  log "Done. Now LOG OUT and back in, then run:"
+fi
 cat <<'EOF'
-  cd ~/agent-system && make doctor
+  cd ~/agent-system && bash infra/scripts/install-tools.sh && make env doctor
 EOF
