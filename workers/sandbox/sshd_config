@@ -1,0 +1,58 @@
+# AIOS sandbox sshd (OpenSSH 10.0, Debian trixie): one user, public keys only, no forwarding of any kind.
+# The only client is Hermes' terminal backend (ssh agent@sandbox, ControlMaster) plus the aios plugin.
+
+# Entrypoint-generated session environment (one SetEnv line: sshd keeps only the first SetEnv it reads, and
+# it overrides sshd's default PATH). Must stay before any other SetEnv.
+Include /etc/ssh/sshd_config.d/*.conf
+
+Port 22
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+PidFile /run/sshd.pid
+LogLevel INFO
+
+# --- authentication: only `agent`, only keys listed by the entrypoint in a root-owned file
+AllowUsers agent
+PermitRootLogin no
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+HostbasedAuthentication no
+GSSAPIAuthentication no
+KerberosAuthentication no
+# No PAM: pam_loginuid needs CAP_AUDIT_CONTROL (dropped) and key-only auth needs nothing from PAM.
+UsePAM no
+StrictModes yes
+MaxAuthTries 3
+LoginGraceTime 20
+MaxStartups 10:30:60
+# Hermes multiplexes every command of a session over one ControlMaster connection.
+MaxSessions 32
+ClientAliveInterval 60
+ClientAliveCountMax 3
+UseDNS no
+
+# --- no agent, X11, TCP/stream-local forwarding, tunnels or user-controlled environment
+DisableForwarding yes
+AllowAgentForwarding no
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+X11Forwarding no
+PermitTunnel no
+GatewayPorts no
+PermitListen none
+PermitOpen none
+PermitUserRC no
+PermitUserEnvironment no
+# Only what Hermes forwards via SendEnv (terminal.env_passthrough / a skill's required_environment_variables):
+# the token git needs, and the tenant-scoped edge key + task tenant of skills/knowledge/transcript_to_notes.
+AcceptEnv GITHUB_TOKEN EDGE_API_KEY HERMES_TENANT
+
+PrintMotd no
+PrintLastLog no
+Banner none
+
+# scp (SFTP protocol since OpenSSH 9) is how Hermes syncs ~/.hermes files into the sandbox.
+Subsystem sftp internal-sftp

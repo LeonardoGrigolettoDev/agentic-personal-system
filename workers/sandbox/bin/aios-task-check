@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# aios-task-check <id> [cmd...]
+#
+# Runs tests/lint for task <id> and prints the JSON result as the last stdout line:
+# {"exit_code", "output_tail", "command", "skipped", "root", "duration_ms", "timed_out"}.
+#   no cmd       the detected test command (same as `aios-check --json $WORKSPACE_ROOT/tasks/<id>`)
+#   one arg      a shell command line, e.g. aios-task-check t1 'go vet ./... && go test ./...'
+#   several      an argv, e.g. aios-task-check t1 ruff check .
+# Timeout: AIOS_TASK_CHECK_TIMEOUT (280s), below Hermes' terminal.timeout (300s) so the agent gets the
+# timeout as JSON (exit_code 124) instead of a killed ssh client. Exit status: the command's (2 on usage
+# errors / unknown task).
+set -euo pipefail
+
+here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/aios/common.sh
+source "$here/../lib/aios/common.sh"
+# shellcheck source=../lib/aios/check.sh
+source "$here/../lib/aios/check.sh"
+
+if [[ ${1:-} == -h || ${1:-} == --help ]]; then
+  sed -n '2,12s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+  exit 0
+fi
+if (($# < 1)); then
+  aios_emit_skip 1 "" "usage error: aios-task-check <id> [cmd...]"
+  exit 2
+fi
+id=$1
+shift
+if ! [[ $id =~ $AIOS_ID_RE ]]; then
+  aios_emit_skip 1 "" "usage error: invalid task id '$id'"
+  exit 2
+fi
+dir=$(aios_task_dir "$id")
+if [[ ! -d $dir ]]; then
+  aios_emit_skip 1 "$dir" "task $id not found (run aios-task-start first)"
+  exit 2
+fi
+AIOS_CHECK_TIMEOUT=$(aios_int_env AIOS_TASK_CHECK_TIMEOUT 280)
+export AIOS_CHECK_TIMEOUT
+
+if (($# == 0)); then
+  exec "$here/aios-check" --json "$dir"
+fi
+if (($# == 1)); then
+  cmd=$1
+else
+  printf -v cmd '%q ' "$@"
+  cmd=${cmd% }
+fi
+aios_exclude_artifacts "$dir"
+rc=0
+aios_run_check "$dir" "$cmd" 1 custom || rc=$?
+exit "$rc"

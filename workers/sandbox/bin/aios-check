@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# aios-check [--json] <path|dir>
+#
+# Validates the project containing PATH: walks up from PATH to its git toplevel (or $WORKSPACE_ROOT) and
+# takes the nearest directory with a test command — Makefile 'test' target, go.mod (go test ./...),
+# package.json test script (pnpm/yarn/npm test), pytest project (uv run pytest -q | python3 -m pytest -q),
+# Cargo.toml (cargo test) — and runs it under AIOS_CHECK_TIMEOUT (default 600s). The run is stopped when
+# the caller stops reading (ssh client killed), so it never holds the per-project lock after its client left.
+#
+# --json prints exactly one line, {"exit_code", "output_tail", "command", "skipped", "root", "duration_ms",
+# "timed_out", "reason"?}, as the last stdout line: the aios Hermes plugin's pre_verify runs
+# `ssh agent@sandbox aios-check --json <changed_path>` and parses it. skipped=true: nothing was validated.
+# Exit status: the test command's (0 when skipped, 2 on usage errors).
+set -euo pipefail
+
+here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/aios/common.sh
+source "$here/../lib/aios/common.sh"
+# shellcheck source=../lib/aios/check.sh
+source "$here/../lib/aios/check.sh"
+
+usage() {
+  sed -n '2,14s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+}
+
+json=0
+while (($#)); do
+  case $1 in
+    --json) json=1 ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      aios_emit_skip "$json" "" "usage error: unknown option $1"
+      exit 2
+      ;;
+    *) break ;;
+  esac
+  shift
+done
+if (($# != 1)) || [[ -z $1 ]]; then
+  aios_emit_skip "$json" "" "usage error: expected exactly one path (see aios-check --help)"
+  exit 2
+fi
+
+if ! problem=$( (aios_workspace_root >/dev/null) 2>&1); then
+  aios_emit_skip "$json" "" "configuration error: ${problem#*: }"
+  exit 2
+fi
+start=$(aios_resolve_dir "$1")
+boundary=$(aios_project_boundary "$start")
+rc=0
+aios_find_project "$start" "$boundary" || rc=$?
+case $rc in
+  0)
+    aios_exclude_artifacts "$AIOS_ROOT"
+    aios_run_check "$AIOS_ROOT" "$AIOS_CMD" "$json" "$AIOS_KIND" || rc=$?
+    exit "$rc"
+    ;;
+  1)
+    aios_emit_skip "$json" "$AIOS_ROOT" "no test command detected (Makefile test target, go.mod, package.json test script, pytest project or Cargo.toml)"
+    ;;
+  *)
+    aios_emit_skip "$json" "$AIOS_ROOT" "$AIOS_SKIP_REASON"
+    ;;
+esac
+exit 0

@@ -1,0 +1,14 @@
+# /etc/gitconfig for the AIOS sandbox.
+[init]
+	defaultBranch = main
+[user]
+	name = AIOS Agent
+	email = agent@aios.invalid
+[advice]
+	detachedHead = false
+[core]
+	pager = cat
+# HTTPS to GitHub authenticates with GITHUB_TOKEN (env or tmpfs file); nothing is ever stored.
+[credential "https://github.com"]
+	helper = /usr/local/bin/aios-git-credential
+	username = x-access-token

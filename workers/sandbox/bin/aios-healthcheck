@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# aios-healthcheck [port]: healthy when a TCP socket is listening on port (default 22, i.e. sshd).
+# Reads /proc/net/tcp{,6} instead of connecting, so the check adds no sshd log lines.
+set -euo pipefail
+
+port=${1:-22}
+[[ $port =~ ^[0-9]{1,5}$ ]] || {
+  echo "aios-healthcheck: invalid port '$port'" >&2
+  exit 2
+}
+tables=()
+for table in /proc/net/tcp /proc/net/tcp6; do
+  if [[ -r $table ]]; then tables+=("$table"); fi
+done
+((${#tables[@]})) || exit 1
+# local_address is HEXIP:HEXPORT; state 0A = LISTEN
+awk -v p="$(printf ':%04X' "$port")" '
+  FNR > 1 && substr($2, length($2) - 4) == p && $4 == "0A" { found = 1; exit }
+  END { exit found ? 0 : 1 }' "${tables[@]}"

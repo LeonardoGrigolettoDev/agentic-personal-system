@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# aios-task-start <id> <repo_url> [ref]
+#
+# Clones repo_url into $WORKSPACE_ROOT/tasks/<id> on a new local branch aios/<id>, starting at ref (branch,
+# tag or commit; default: the remote's default branch), and prints the task directory.
+#   id        ^[A-Za-z0-9_-]{1,64}$
+#   repo_url  https://host[:port]/path or git@host:path only (no credentials in URLs: set GITHUB_TOKEN)
+# Idempotent for the same id + URL (prints the existing directory). The starting commit is recorded as
+# `git config aios.base` (the empty tree for an empty repository), which aios-task-patch diffs against.
+# Clone timeout: AIOS_CLONE_TIMEOUT (900s).
+set -euo pipefail
+
+here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+# shellcheck source=../lib/aios/common.sh
+source "$here/../lib/aios/common.sh"
+
+usage() { sed -n '2,11s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"; }
+
+validate_url() {
+  local url=$1
+  local https_re='^https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]{1,5})?(/[A-Za-z0-9._~%+/-]*)?$'
+  local scp_re='^git@[A-Za-z0-9][A-Za-z0-9.-]*:[A-Za-z0-9._~][A-Za-z0-9._~/+-]*$'
+  ((${#url} <= 2048)) || aios_usage_die "repository URL too long"
+  [[ $url =~ $https_re || $url =~ $scp_re ]] && return 0
+  if [[ $url == https://*@* ]]; then
+    aios_usage_die "credentials in URLs are refused (they would be stored in .git/config); set GITHUB_TOKEN instead"
+  fi
+  aios_usage_die "unsupported repository URL '$url' (allowed: https://host/path or git@host:path)"
+}
+
+validate_ref() {
+  local ref_re='^[A-Za-z0-9][A-Za-z0-9._/+-]{0,199}$'
+  [[ $1 =~ $ref_re && $1 != *..* ]] || aios_usage_die "invalid ref '$1'"
+}
+
+# resolve_ref REF TIMEOUT: commit for a remote branch, tag or commit id; fetches it when the clone lacks it.
+resolve_ref() {
+  local ref=$1 timeout_s=$2 candidate sha
+  for candidate in "refs/remotes/origin/$ref" "refs/tags/$ref" "$ref"; do
+    if sha=$(git rev-parse --verify --quiet "$candidate^{commit}" 2>/dev/null); then
+      printf '%s\n' "$sha"
+      return 0
+    fi
+  done
+  timeout --kill-after=10s "${timeout_s}s" git fetch --quiet --no-tags origin "$ref" </dev/null >&2 || return 1
+  git rev-parse --verify --quiet 'FETCH_HEAD^{commit}'
+}
+
+if [[ ${1:-} == -h || ${1:-} == --help ]]; then
+  usage
+  exit 0
+fi
+if (($# < 2 || $# > 3)); then
+  usage >&2
+  exit 2
+fi
+id=$1 url=$2 ref=${3:-}
+aios_require_id "$id"
+validate_url "$url"
+[[ -z $ref ]] || validate_ref "$ref"
+
+tasks=$(aios_workspace_root)/tasks
+dest=$tasks/$id
+mkdir -p -- "$tasks"
+aios_task_lock "$id"
+
+if [[ -e $dest || -L $dest ]]; then
+  existing=$(git -C "$dest" config --get remote.origin.url 2>/dev/null || true)
+  [[ $existing == "$url" ]] || aios_die "task $id already exists for '${existing:-unknown}'; run aios-task-destroy $id first"
+  aios_log "task $id already exists; reusing it"
+  printf '%s\n' "$dest"
+  exit 0
+fi
+
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new}
+clone_timeout=$(aios_int_env AIOS_CLONE_TIMEOUT 900)
+staging=$(mktemp -d "$tasks/.$id.tmp.XXXXXX")
+AIOS_CLEANUP+=("$staging")
+
+timeout --kill-after=10s "${clone_timeout}s" git clone --quiet -- "$url" "$staging/repo" </dev/null ||
+  aios_die "git clone failed for $url"
+cd -- "$staging/repo"
+
+base=""
+if [[ -n $ref ]]; then
+  base=$(resolve_ref "$ref" "$clone_timeout") || aios_die "ref '$ref' not found in $url"
+  git switch --quiet --create "aios/$id" "$base"
+elif base=$(git rev-parse --verify --quiet 'HEAD^{commit}'); then
+  git switch --quiet --create "aios/$id"
+else
+  git symbolic-ref HEAD "refs/heads/aios/$id" # empty repository: the branch is born on the first commit
+  base=$(git hash-object -t tree /dev/null)    # and every commit belongs in the patch
+fi
+git config aios.base "$base"
+git config aios.url "$url"
+[[ -z $ref ]] || git config aios.ref "$ref"
+aios_exclude_artifacts .
+
+cd /
+mv -T -- "$staging/repo" "$dest"
+aios_log "task $id: $(git -C "$dest" symbolic-ref --short HEAD) at ${base:0:12}${base:+ }from $url"
+printf '%s\n' "$dest"
