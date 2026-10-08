@@ -1,0 +1,59 @@
+[project]
+name = "edge"
+version = "0.1.0"
+description = "AIOS agent-edge media worker: uploads, ffmpeg audio extraction, whisper.cpp transcription, local map-reduce summaries and knowledge ingest"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    # >=0.0.31: per-part header count/size limits (0.0.27) incl. bounded field names (0.0.31)
+    "python-multipart>=0.0.31",
+]
+
+[project.scripts]
+edge = "edge.cli:main"
+
+[project.optional-dependencies]
+# Speaker diarization (pyannote + CPU-only torch). Not installed by default: `uv sync --extra diarize` + HF_TOKEN.
+# torch/torchaudio/torchcodec are listed (pyannote's own floors) so [tool.uv.sources] can take them from the
+# CPU index: the PyPI Linux wheels pull ~15 nvidia-* CUDA packages (several GB) the AMD laptop can't use, and
+# PyPI's torchcodec needs libnvrtc (CUDA) to load at all.
+diarize = [
+    "pyannote.audio>=4.0",
+    "torch>=2.8",
+    "torchaudio>=2.8",
+    "torchcodec>=0.7",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchaudio = [{ index = "pytorch-cpu" }]
+torchcodec = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "respx>=0.21",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/edge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
+markers = [
+    "integration: talks to live local services (skipped when they are not reachable)",
+    "ffmpeg: needs real ffmpeg/ffprobe binaries (skipped when missing)",
+]
