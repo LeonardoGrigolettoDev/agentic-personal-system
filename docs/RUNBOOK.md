@@ -327,6 +327,27 @@ diretório depois do `make smoke`.
 
 ## 4. Diagnóstico
 
+### 4.0 Bootstrap parado por pacote meio configurado (DKMS × kernel novo)
+
+O bootstrap para logo no começo se o `dpkg` tem pacotes `iF`/`iU`. Caso visto em 2026-10-07: o upgrade do kernel
+HWE para 7.0.0-34 tenta compilar o `evdi-dkms` 1.14.2 do Ubuntu (usado pela tela virtual do Sunshine), que não
+compila no 7.0 (`DRM_ERROR`, `struct_mutex` saíram do kernel). Para ficar no 6.17, onde o evdi funciona:
+
+```bash
+apt-get -s remove --purge linux-image-7.0.0-34-generic linux-headers-7.0.0-34-generic \
+  linux-generic-hwe-24.04 linux-headers-generic-hwe-24.04 linux-image-generic-hwe-24.04   # simula: só 5 remoções
+sudo apt-get remove --purge linux-image-7.0.0-34-generic linux-headers-7.0.0-34-generic \
+  linux-generic-hwe-24.04 linux-headers-generic-hwe-24.04 linux-image-generic-hwe-24.04
+sudo dpkg --configure -a        # o evdi-dkms termina (compila só para os kernels com headers)
+sudo apt-get -f install         # deve sair sem erro
+dkms status                     # evdi ... 6.17.0-42-generic: installed
+```
+
+Remover só a imagem não basta: os metapacotes HWE puxariam o 7.0.0-38, com o mesmo erro. Sem eles, os kernels
+novos param de chegar pela trilha HWE; a GA (`linux-image-generic`, 6.8) continua recebendo atualizações. Para
+voltar ao 7.x, instale antes um evdi do upstream (`DisplayLink/evdi` ≥ 1.14.15 tem suporte preliminar ao 7.0)
+e teste a tela virtual.
+
 ### 4.1 RAM e swap (16 GB)
 
 - `make stats`, `free -h` e `ollama ps` mostram o uso.

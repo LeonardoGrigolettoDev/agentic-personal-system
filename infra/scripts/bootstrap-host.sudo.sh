@@ -16,6 +16,16 @@ CODENAME="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"
 [[ "$CODENAME" == "noble" ]] || { echo "Expected Ubuntu base 'noble', got '$CODENAME'"; exit 1; }
 ARCH="$(dpkg --print-architecture)"
 
+# apt refuses to install anything while another package is half-configured (e.g. a DKMS module that does not
+# build for a pending kernel upgrade). Stop here with the culprits instead of failing halfway through.
+broken="$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 2>/dev/null | awk '$1 !~ /^(ii|hi|rc|un|pn)$/ {print $2}')"
+if [[ -n "$broken" ]]; then
+  echo "dpkg has packages that are not fully configured - fix them first, then rerun this script:"
+  printf '  %s\n' $broken
+  echo "Try 'sudo dpkg --configure -a' and read the first error (docs/RUNBOOK.md §4 has the DKMS/kernel case)."
+  exit 1
+fi
+
 # ufw must default-deny incoming, because Ollama binds 0.0.0.0 so containers can reach it.
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw status verbose | grep -q "deny (incoming)" || {
