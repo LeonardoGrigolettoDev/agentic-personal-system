@@ -1,0 +1,26 @@
+# Regras de categorização (finance/expense_categorization/scripts/categorize.py).
+# - Chave: nome da categoria. Valor: lista de palavras-chave.
+# - Palavra-chave: casa palavra inteira, sem diferenciar maiúsculas/acentos ("uber" não casa "uberlandia").
+# - "re:<regex>": expressão regular aplicada ao texto normalizado (minúsculo, sem acentos).
+# - A correspondência mais longa vence; empate fica com a categoria listada primeiro.
+# Copie para o workspace do usuário (ex.: /workspace/financas/regras.yaml) e evolua com aprovação.
+version: 1
+categories:
+  Alimentação:
+    - ifood
+    - rappi
+    - uber eats
+    - supermercado
+    - "pão de açúcar"
+    - padaria
+  Transporte: [uber, "99 pop", "99app", posto, estacionamento, "sem parar"]
+  Moradia: [aluguel, condominio, enel, sabesp, "comgas"]
+  Saúde: [farmacia, drogasil, "droga raia", unimed, laboratorio]
+  Assinaturas: [netflix, spotify, "amazon prime", "youtube premium", icloud]
+  Receitas:
+    - salario
+    - "re:^pix recebido"
+  Transferências internas:
+    - "re:^(ted|doc|pix) (enviad[oa]|recebid[oa]) .*mesma titularidade"
+    - "aplicacao rdb"
+    - "resgate rdb"

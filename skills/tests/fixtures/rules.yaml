@@ -1,0 +1,9 @@
+# fixture: rules for categorize.py tests
+version: 1
+categories:
+  Alimentação: [supermercado, ifood, "uber eats"]
+  Transporte: [uber, posto]
+  Moradia:
+    - aluguel   # rent
+  Receitas:
+    - "re:^salario\\b"
