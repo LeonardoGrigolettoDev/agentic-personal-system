@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "infra/railway/db-backup/Dockerfile",
+    "watchPatterns": ["/infra/railway/db-backup/**"]
+  },
+  "deploy": {
+    "startCommand": null,
+    "healthcheckPath": null,
+    "cronSchedule": "0 6 * * *",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 2,
+    "numReplicas": 1
+  }
+}

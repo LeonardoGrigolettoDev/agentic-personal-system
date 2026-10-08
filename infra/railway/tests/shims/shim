@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Test double for docker, psql, pg_dump, pg_restore, rclone, tailscale, tailscaled, socat and curl.
+# Symlinked under each name into a temporary PATH dir by run.sh. Every call is appended to $SHIM_LOG
+# ("<tool>\t<args>"), piped stdin to $SHIM_LOG.stdin, rclone's non-secret RCLONE_CONFIG_* settings to
+# $SHIM_LOG.env, and a canned answer is printed for the read-only queries the scripts mark with
+# /* aios:<name> */ comments. Nothing here touches a real system.
+set -uo pipefail
+tool=$(basename "$0")
+args="$*"
+printf '%s\t%s\n' "$tool" "$args" >>"${SHIM_LOG:?SHIM_LOG not set}"
+stdin=""
+if [[ ! -t 0 ]]; then
+  stdin=$(cat)
+  [[ -z "$stdin" ]] || printf '=== %s %s\n%s\n' "$tool" "$args" "$stdin" >>"$SHIM_LOG.stdin"
+fi
+text="$args $stdin"
+
+applied() { find "${SHIM_REPO:?}/migrations" -name '[0-9][0-9][0-9]_*.sql' -printf '%f\n' | sed 's/\.sql$//' | sort; }
+
+sql_answer() {
+  case "$text" in
+    *aios:version*) echo "${SHIM_SRC_VERSION:-170011}" ;;
+    *aios:dbsize*) echo "10 MB" ;;
+    *aios:server*) echo "${SHIM_TGT_VERSION:-170011}|postgres|${SHIM_TGT_SUPER:-t}" ;;
+    *aios:extensions-create*) ;;
+    *aios:extensions*) printf 'pg_trgm\nunaccent\n'; [[ -n "${SHIM_NO_VECTOR:-}" ]] || echo vector ;;
+    *aios:databases*) printf '%b\n' "${SHIM_TGT_DBS:-aios\nlitellm}" ;;
+    *aios:tables*) echo "${SHIM_TGT_TABLES:-0}" ;;
+    *aios:sessions*) [[ -z "${SHIM_TGT_SESSIONS:-}" ]] || printf '%b\n' "$SHIM_TGT_SESSIONS" ;;
+    *aios:counts*) printf 'public.documents|3\npublic.schema_migrations|6\n' ;;
+    *aios:migrations*) applied ;;
+    *aios:drill-version*) echo "006_decision_ledger" ;;
+    *aios:drill-vector*) echo "t" ;;
+  esac
+}
+
+toc() {
+  cat <<'EOF'
+;
+; Archive created at 2026-10-07 03:00:00 UTC
+3; 3079 16385 EXTENSION - vector
+4512; 0 0 COMMENT - EXTENSION vector
+215; 1259 16400 TABLE public documents aios
+216; 1259 16410 TABLE public schema_migrations aios
+EOF
+}
+
+pg_tool() { # name args...
+  case "$1" in
+    psql) sql_answer ;;
+    pg_dump) printf 'PGDMP-fake-dump\n' ;;
+    pg_restore) [[ " $* " == *" -l "* ]] && toc ;;
+  esac
+}
+
+case "$tool" in
+  psql | pg_dump | pg_restore) pg_tool "$tool" "$@" ;;
+  docker)
+    if [[ "$args" == compose\ ps* || "$args" == compose\ --profile*ps* ]]; then
+      if [[ "$args" == *--services* ]]; then
+        [[ -z "${SHIM_RUNNING:-}" ]] || printf '%b\n' "$SHIM_RUNNING"
+      elif [[ "$args" == *postgres* && -z "${SHIM_PG_DOWN:-}" ]]; then
+        echo "c0ffee"
+      fi
+      exit 0
+    fi
+    for t in psql pg_dump pg_restore; do
+      for a in "$@"; do
+        if [[ "$a" == "$t" ]]; then
+          pg_tool "$t" "$@"
+          exit 0
+        fi
+      done
+    done
+    ;;
+  rclone)
+    env | grep -E '^RCLONE_CONFIG_[A-Z0-9_]+_(TYPE|PROVIDER|REGION|FORCE_PATH_STYLE)=' | sort >>"$SHIM_LOG.env" || true
+    [[ "${1:-}" == size ]] && echo '{"count":1,"bytes":1234,"sizeless":0}'
+    [[ -n "${SHIM_RCLONE_FAIL:-}" && "${1:-}" == "$SHIM_RCLONE_FAIL" ]] && exit 1
+    ;;
+  tailscale)
+    case "$args" in
+      *"status --json"*) empty='{}'; [[ "$args" == *serve* ]] && echo "${SHIM_TS_SERVE_JSON:-$empty}" ||
+        printf '{"BackendState":"%s","Self":{"DNSName":"thinkpad.tail0000.ts.net.","Tags":["tag:thinkpad"]}}\n' \
+          "${SHIM_TS_STATE:-Running}" ;;
+    esac
+    ;;
+  curl) exit 7 ;;
+esac
+exit 0

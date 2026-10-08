@@ -1,0 +1,18 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": [
+      "/workers/sandbox/**"
+    ]
+  },
+  "deploy": {
+    "startCommand": "/bin/bash -c 'set -eu; umask 077; : \"${AIOS_SANDBOX_HOST_KEY_B64:?is required on Railway: without a stable host key each redeploy breaks the Hermes known_hosts entry}\"; : \"${AIOS_SANDBOX_SSH_PUBKEY:?is required on Railway: the Hermes public key for authorized_keys}\"; k=/etc/ssh/keys/ssh_host_ed25519_key; install -d -m 0755 /etc/ssh/keys; printf %s \"$AIOS_SANDBOX_HOST_KEY_B64\" | base64 -d >$k; ssh-keygen -y -f $k >$k.pub; unset AIOS_SANDBOX_HOST_KEY_B64; printf \"%s\\n\" \"$AIOS_SANDBOX_SSH_PUBKEY\" >/run/aios-authorized_keys; if [ -n \"${AIOS_EDGE_URL:-}\" ]; then [[ $AIOS_EDGE_URL =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] || { echo \"AIOS_EDGE_URL must be http(s)://host[:port]\" >&2; exit 1; }; printf \"export AIOS_EDGE_URL=%s\\n\" \"$AIOS_EDGE_URL\" >/etc/profile.d/aios-railway.sh; chmod 0644 /etc/profile.d/aios-railway.sh; fi; AIOS_AUTHORIZED_KEYS=/run/aios-authorized_keys exec /usr/bin/tini -- /usr/local/sbin/aios-sandbox-entrypoint'",
+    "healthcheckPath": null,
+    "restartPolicyType": "ALWAYS",
+    "numReplicas": 1,
+    "requiredMountPath": "/workspace",
+    "drainingSeconds": 10
+  }
+}

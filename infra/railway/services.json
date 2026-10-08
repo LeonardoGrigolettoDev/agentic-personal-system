@@ -1,0 +1,110 @@
+{
+  "$comment": "Railway topology for the AIOS control plane (ARCHITECTURE §20, §25). Names are Railway service names and private DNS labels (<name>.railway.internal). Per service: <dir>/railway.json (build/deploy) and <dir>/variables.env (Railway variables, references only, never secrets). Read by infra/scripts/railway-plan.sh.",
+  "project": "aios",
+  "branch": "main",
+  "services": [
+    {
+      "name": "postgres",
+      "dir": "postgres",
+      "rootDirectory": "/",
+      "port": 5432,
+      "volume": {
+        "name": "pgdata",
+        "mountPath": "/var/lib/postgresql/data",
+        "sizeMB": 5000,
+        "backups": [
+          "DAILY",
+          "WEEKLY"
+        ]
+      },
+      "role": "PostgreSQL 17 + pgvector 0.8.7 (same image as local compose); databases aios, litellm (+ langfuse if self-hosted)"
+    },
+    {
+      "name": "litellm",
+      "dir": "litellm",
+      "rootDirectory": "/",
+      "port": 4000,
+      "role": "model gateway; config rendered at boot from config/litellm/config.template.yaml with the providers whose keys are set"
+    },
+    {
+      "name": "decision",
+      "dir": "decision",
+      "rootDirectory": "/",
+      "port": 8080,
+      "role": "Decision Service (Go): Jev, routing policy, budget, escalation; policy files baked into the image"
+    },
+    {
+      "name": "knowledge",
+      "dir": "knowledge",
+      "rootDirectory": "/workers/kb",
+      "port": 8080,
+      "role": "knowledge base, Context Compiler, memory, MCP for Hermes"
+    },
+    {
+      "name": "sandbox",
+      "dir": "sandbox",
+      "rootDirectory": "/workers/sandbox",
+      "port": 22,
+      "volume": {
+        "name": "sandbox-workspace",
+        "mountPath": "/workspace",
+        "sizeMB": 5000
+      },
+      "role": "isolated execution for Hermes' terminal (SSH backend, user agent)"
+    },
+    {
+      "name": "hermes",
+      "dir": "hermes",
+      "rootDirectory": "/",
+      "port": 8642,
+      "volume": {
+        "name": "hermes-data",
+        "mountPath": "/opt/data",
+        "sizeMB": 5000,
+        "backups": [
+          "DAILY",
+          "WEEKLY"
+        ]
+      },
+      "role": "Hermes Agent: the only agent runtime (chief gateway, profiles, cron, Kanban, API server)"
+    },
+    {
+      "name": "edge-gw",
+      "dir": "edge-gw",
+      "rootDirectory": "/",
+      "port": null,
+      "role": "Tailscale gateway (tag:aios-cloud, stable node on a small volume): Railway -> ThinkPad edge :8093 / Ollama :11434; tailnet -> selected Railway ports",
+      "volume": {
+        "name": "edge-gw-state",
+        "mountPath": "/var/lib/tailscale",
+        "sizeMB": 500
+      }
+    },
+    {
+      "name": "db-backup",
+      "dir": "db-backup",
+      "rootDirectory": "/",
+      "port": null,
+      "role": "cron: pg_dump -Fc of every database into the aios-backups bucket, pruned after BACKUP_RETENTION_DAYS"
+    }
+  ],
+  "databases": [
+    {
+      "name": "redis",
+      "engine": "redis",
+      "role": "Railway Redis template (cache, locks; decision uses DB 1)"
+    }
+  ],
+  "buckets": [
+    {
+      "name": "aios-storage",
+      "region": "iad",
+      "role": "storage:// objects (S3-compatible; replaces data/storage)"
+    },
+    {
+      "name": "aios-backups",
+      "region": "iad",
+      "role": "db-backup dumps (keep a second copy outside Railway too)"
+    }
+  ]
+}

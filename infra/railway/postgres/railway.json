@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "infra/railway/postgres/Dockerfile",
+    "watchPatterns": ["/infra/railway/postgres/**", "/infra/docker/postgres/**"]
+  },
+  "deploy": {
+    "startCommand": null,
+    "healthcheckPath": null,
+    "restartPolicyType": "ALWAYS",
+    "numReplicas": 1,
+    "requiredMountPath": "/var/lib/postgresql/data",
+    "drainingSeconds": 30
+  }
+}
