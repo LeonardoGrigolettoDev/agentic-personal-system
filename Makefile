@@ -12,10 +12,10 @@ WHISPER_MODEL := large-v3-turbo-q5_0
 HERMES_PY := /opt/hermes/.venv/bin/python
 .PHONY: help doctor env litellm-config models whisper-model up-core up down ps logs migrate psql litellm-keys \
         hermes-setup hermes-shell hermes-doctor obs-up obs-down transcribe health smoke backup stats \
-        timers-install test kb-ingest kb-search kb-stats kb-maintain
+        timers-install test kb-ingest kb-search kb-stats kb-maintain kb-project kb-projects
 
 help: ## list targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 doctor: ## check host prerequisites (after the sudo bootstrap + re-login)
 	@ok(){ printf "  \033[32m✔\033[0m %s\n" "$$1"; }; bad(){ printf "  \033[31m✘\033[0m %s\n" "$$1"; }; \
@@ -80,7 +80,7 @@ litellm-keys: ## create budgeted virtual keys (hermes/decision/kb) into .env
 	bash infra/scripts/litellm-keys.sh
 
 hermes-setup: ## (re)apply Hermes config, domain profiles, aios plugin and cron reviews (idempotent)
-	$(DC) --profile agent exec hermes $(HERMES_PY) /opt/aios/bin/setup.py $(ARGS)
+	$(DC) --profile agent exec --user hermes hermes $(HERMES_PY) /opt/aios/bin/setup.py $(ARGS)
 
 hermes-kanban: ## show the Kanban board (domain agent tasks)
 	$(DC) --profile agent exec hermes hermes kanban list
@@ -168,6 +168,13 @@ kb-stats: ## KB document/chunk counts per tenant/domain
 
 kb-maintain: ## expire temporary/superseded memories, drop orphan chunks
 	$(KB) maintain
+
+kb-project: ## register/update a project: make kb-project tenant=nitro slug=app-x name="App X" [domain=engineering] [repo=git@...]
+	@[ -n "$(tenant)" ] && [ -n "$(slug)" ] && [ -n "$(name)" ] || { echo 'usage: make kb-project tenant=.. slug=.. name=".." [domain=..] [repo=..]'; exit 1; }
+	$(KB) project add "$(slug)" --tenant $(tenant) --name "$(name)" $(if $(domain),--domain $(domain)) $(if $(repo),--repo "$(repo)")
+
+kb-projects: ## list registered projects: make kb-projects [tenant=nitro]
+	$(KB) project list $(if $(tenant),--tenant $(tenant))
 
 # component targets (sandbox, edge, bench, railway, ...) live in mk/*.mk
 -include mk/*.mk

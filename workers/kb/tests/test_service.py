@@ -82,7 +82,8 @@ def test_mcp_lists_tools(client):
     tools = _mcp(client, "tools/list", {}, 2)
     assert tools.status_code == 200, tools.text
     names = {t["name"] for t in tools.json()["result"]["tools"]}
-    assert names == {"knowledge_search", "compile_context", "memory_save", "memory_search", "ingest_note"}
+    assert names == {"knowledge_search", "compile_context", "memory_save", "memory_search", "ingest_note",
+                     "project_list", "project_upsert"}
 
 
 def test_mcp_tool_error_is_readable(client):
@@ -92,3 +93,13 @@ def test_mcp_tool_error_is_readable(client):
     result = r.json()["result"]
     assert result["isError"] is True
     assert "not served" in result["content"][0]["text"]
+
+
+def test_project_validation_needs_no_database(client):
+    bad = [({"slug": "Bad Slug", "name": "x"}, "slug"), ({"slug": "app", "name": "x", "repository": "/home/me/app"}, "host path"),
+           ({"slug": "app", "name": "x", "domain": "nope"}, "domain"), ({"slug": "app", "name": "x", "status": "done"}, "status")]
+    for body, msg in bad:
+        r = client.post("/v1/projects", json={"tenant": "pessoal", **body}, headers=AUTH)
+        assert r.status_code == 400 and msg in r.json()["detail"], (body, r.text)
+    r = client.post("/v1/projects", json={"tenant": "nitro", "slug": "app", "name": "x"}, headers=AUTH)
+    assert r.status_code == 403  # tenant ceiling applies to projects too

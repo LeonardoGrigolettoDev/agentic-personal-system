@@ -48,6 +48,20 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--port", type=int, default=8080)
 
     sub.add_parser("maintain", help="expire temporary/superseded memories and drop orphan chunks")
+
+    pr = sub.add_parser("project", help="register/list projects (slugs for project-scoped memory)")
+    prs = pr.add_subparsers(dest="project_command", required=True)
+    pa = prs.add_parser("add", help="create or update a project")
+    pa.add_argument("slug")
+    pa.add_argument("--tenant", required=True, choices=TENANTS)
+    pa.add_argument("--name", required=True)
+    pa.add_argument("--domain", choices=DOMAINS, help="default engineering on create; unchanged on update")
+    pa.add_argument("--repo", dest="repository", help="git remote or storage:// (never a host path)")
+    pa.add_argument("--description")
+    pa.add_argument("--status", choices=("active", "paused", "archived"), help="default active on create")
+    pl = prs.add_parser("list", help="projects per tenant")
+    pl.add_argument("--tenant", choices=TENANTS, help="default: all tenants")
+    pl.add_argument("--json", action="store_true")
     return parser
 
 
@@ -62,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         logging.getLogger("kb").setLevel(logging.INFO)  # per-file progress is the point of ingest
     try:
         commands = {"ingest": cmd_ingest, "search": cmd_search, "stats": cmd_stats, "serve": cmd_serve,
-                    "maintain": cmd_maintain}
+                    "maintain": cmd_maintain, "project": cmd_project}
         return commands[args.command](args)
     except TenantGuardError as exc:
         print(f"kb: REFUSED: {exc}", file=sys.stderr)
@@ -199,6 +213,33 @@ def cmd_maintain(args) -> int:
     settings = _settings(args)
     with connect(settings.database_url) as conn:
         print(json.dumps(maintain(conn)))
+    return 0
+
+
+def cmd_project(args) -> int:
+    from kb import projects
+    from kb.store import connect
+
+    settings = _settings(args)
+    with connect(settings.database_url) as conn:
+        if args.project_command == "add":
+            spec = projects.ProjectIn(tenant=args.tenant, slug=args.slug, name=args.name, domain=args.domain,
+                                      description=args.description, status=args.status, repository=args.repository)
+            try:
+                project, created = projects.upsert(conn, spec)
+            except projects.ProjectInputError as exc:
+                print(f"kb: {exc}", file=sys.stderr)
+                return EXIT_USAGE
+            print(f"{'created' if created else 'updated'} {project.tenant}/{project.slug}: {project.name}")
+            return 0
+        items = projects.list_projects(conn, [args.tenant] if args.tenant else TENANTS)
+    if args.json:
+        print(json.dumps([p.to_dict() for p in items], ensure_ascii=False))
+        return 0
+    for p in items:
+        print(f"{p.tenant:<8} {p.slug:<28} {p.status:<8} {p.domain:<12} {p.name}  {p.repository or ''}")
+    if not items:
+        print("(no projects)")
     return 0
 
 

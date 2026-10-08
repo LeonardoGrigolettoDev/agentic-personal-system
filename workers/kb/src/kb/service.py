@@ -1,7 +1,7 @@
 """Knowledge service: HTTP API + MCP (streamable HTTP) over the knowledge base.
 
 Hermes reaches it as an MCP server (tools knowledge_search, compile_context, memory_save,
-memory_search, ingest_note); other services use the JSON API. Every request except health checks
+memory_search, ingest_note, project_list, project_upsert); other services use the JSON API. Every request except health checks
 needs `Authorization: Bearer $KNOWLEDGE_API_KEY`. KNOWLEDGE_TENANTS caps which tenants this
 instance may serve at all; per-session tenant isolation is enforced by Hermes' pre_tool_call hook.
 """
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from kb import context as ctxmod
-from kb import memory, retrieve
+from kb import memory, projects, retrieve
 from kb.config import Settings, load_settings
 from kb.embed import Embedder
 from kb.ingest import ContentIn, ingest_content, validate_content
@@ -103,6 +103,16 @@ class MemorySearchIn(BaseModel):
     include_shared: bool = True
 
 
+class ProjectModel(BaseModel):
+    tenant: str
+    slug: str
+    name: str
+    domain: str | None = None  # None: engineering on create, unchanged on update
+    description: str | None = None
+    status: str | None = None  # None: active on create, unchanged on update
+    repository: str | None = None
+
+
 class IngestIn(BaseModel):
     tenant: str
     source_uri: str = Field(min_length=3, max_length=2000)
@@ -152,6 +162,30 @@ def op_memory_save(p: MemoryInModel) -> dict:
     except memory.MemoryInputError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"id": res.id, "action": res.action, "superseded_id": res.superseded_id}
+
+
+def op_project_upsert(p: ProjectModel) -> dict:
+    allowed(p.tenant)
+    spec = projects.ProjectIn(**p.model_dump())
+    try:
+        spec.validate()
+        with conn() as c:
+            project, created = projects.upsert(c, spec)
+    except projects.ProjectConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except projects.ProjectInputError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"project": project.to_dict(), "created": created}
+
+
+def op_project_list(tenant: str, status: str | None = None) -> dict:
+    tenants = [allowed(tenant)]
+    try:
+        with conn() as c:
+            items = projects.list_projects(c, tenants, status=status)
+    except projects.ProjectInputError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"results": [p.to_dict() for p in items]}
 
 
 def op_memory_search(p: MemorySearchIn) -> dict:
@@ -246,6 +280,25 @@ def ingest_note(tenant: str, title: str, content: str, domain: str | None = None
     return _tool(op_ingest, IngestIn(tenant=tenant, source_uri=uri, title=title, content=content, domain=domain))
 
 
+@mcp.tool()
+def project_list(tenant: str, status: str | None = None) -> dict:
+    """Projects of a tenant (slug, name, domain, status, repository). Use the slug in memory_save/compile_context."""
+    try:
+        return op_project_list(tenant, status)
+    except HTTPException as exc:
+        raise ToolError(str(exc.detail)) from None
+
+
+@mcp.tool()
+def project_upsert(tenant: str, slug: str, name: str, domain: str | None = None, repository: str | None = None,
+                   description: str | None = None, status: str | None = None) -> dict:
+    """Register or update a project so project-scoped memories can point at it. slug: a-z0-9-.
+    repository: git remote (https://, ssh://, git@host:) or storage://. status: active|paused|archived.
+    Omitted fields keep their stored values on update (new projects: domain engineering, status active)."""
+    return _tool(op_project_upsert, ProjectModel(tenant=tenant, slug=slug, name=name, domain=domain,
+                                                 repository=repository, description=description, status=status))
+
+
 # ---------------------------------------------------------------- HTTP app
 class BearerAuth(BaseHTTPMiddleware):
     OPEN = {"/healthz", "/readyz"}
@@ -326,6 +379,14 @@ def create_app(settings: Settings | None = None, *, pool: ConnectionPool | None 
             items = memory.list_memories(c, scope_for(tenant, include_shared), scope=scope, domain=domain,
                                          project=project, kind=kind, limit=limit)
         return {"results": [m.to_dict() for m in items]}
+
+    @app.get("/v1/projects")
+    def http_project_list(tenant: str, status: str | None = None):
+        return op_project_list(tenant, status)
+
+    @app.post("/v1/projects")
+    def http_project_upsert(p: ProjectModel):
+        return op_project_upsert(p)
 
     @app.post("/v1/memories/{memory_id}/deprecate")
     def deprecate(memory_id: str, tenant: str):
