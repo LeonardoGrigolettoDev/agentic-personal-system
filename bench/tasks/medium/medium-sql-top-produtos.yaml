@@ -1,0 +1,31 @@
+key: medium-sql-top-produtos
+category: medium
+title: Relatório SQL dos 3 produtos que mais faturaram em setembro (SQLite)
+tenant: pessoal
+agent: engineering
+fixture: medium-sql-top-produtos
+expected_task_type: implementation
+expected_domain: engineering
+tags: [sql, mini-erp]
+prompt: |
+  Em {workdir} estão schema.sql e seed.sql do meu mini-ERP (SQLite). Escreva {workdir}/relatorio.sql com UMA
+  consulta que retorne os 3 produtos que mais faturaram em setembro de 2026, com as colunas `produto` (nome) e
+  `faturamento` (soma de quantidade × preço unitário − desconto, arredondada a 2 casas), do maior para o
+  menor. Só conta pedido com status 'pago'; setembro é pelo campo criado_em (horário local, sem fuso).
+  Teste com o sqlite3 do Python. Não altere schema.sql nem seed.sql.
+check:
+  type: command
+  run: |
+    python3 - <<'PY'
+    import sqlite3, sys
+    db = sqlite3.connect(":memory:")
+    db.executescript(open("schema.sql", encoding="utf-8").read())
+    db.executescript(open("seed.sql", encoding="utf-8").read())
+    cur = db.execute(open("relatorio.sql", encoding="utf-8").read())
+    cols = [c[0].lower() for c in cur.description]
+    got = [(r[0], round(float(r[1]), 2)) for r in cur.fetchall()]
+    want = [("Café Especial 500g", 250.0), ("Leite Integral 1L", 191.64), ("Pão de Queijo 1kg", 180.0)]
+    print("colunas", cols, "linhas", got)
+    sys.exit(0 if cols == ["produto", "faturamento"] and got == want else 1)
+    PY
+  protect: [schema.sql, seed.sql]

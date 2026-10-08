@@ -1,0 +1,9 @@
+data;descricao;projeto;valor
+02/09/2026;Passagem SP (visita cliente Fretex);fretex;1.287,40
+02/09/2026;Uber aeroporto;fretex;48,90
+03/09/2026;Hotel Ibis (1 diária);fretex;612,00
+03/09/2026;Jantar com cliente Fretex;fretex;186,50
+04/09/2026;Uber cliente -> aeroporto;fretex;52,30
+04/09/2026;AWS conta de testes;app-entregas;143,27
+15/09/2026;Almoço time;interno;94,80
+22/09/2026;Licença JetBrains;interno;89,00

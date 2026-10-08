@@ -1,0 +1,24 @@
+key: refactor-py-impostos-duplicados
+category: refactor
+title: Remover funções de ICMS copiadas por UF (Python)
+tenant: pessoal
+agent: engineering
+fixture: refactor-py-impostos-duplicados
+expected_task_type: refactor
+expected_domain: engineering
+tags: [python, mini-erp]
+prompt: |
+  Em {workdir}/impostos.py há uma função de ICMS por UF, todas copiadas e coladas, e um if/elif enorme.
+  Refatore para uma única implementação guiada por dados (tabela de alíquotas por UF), mantendo a função
+  pública calcula_icms com a mesma assinatura e o mesmo resultado. Os testes (`python3 -m unittest`) não
+  podem ser alterados. Explique em poucas linhas o desenho final.
+check:
+  type: command
+  run: |
+    set -e
+    python3 -m unittest -q
+    linhas=$(grep -cv '^\s*$' impostos.py)
+    q=$(grep -o 'quantize' impostos.py | wc -l)
+    echo "linhas não vazias: $linhas; quantize: $q"
+    [ "$linhas" -le 35 ] && [ "$q" -le 2 ]
+  protect: [test_impostos.py, Makefile]

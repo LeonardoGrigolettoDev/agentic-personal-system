@@ -1,0 +1,18 @@
+key: finance-fatura-categorias
+category: finance
+title: Gastos por categoria na fatura do cartão (com estorno)
+tenant: pessoal
+agent: finance
+fixture: finance-fatura-categorias
+expected_task_type: finance_analysis
+expected_domain: finance
+tags: [cartao, planilha]
+prompt: |
+  Analise a fatura de setembro em {workdir}/fatura-setembro.csv (export do app do cartão: valores positivos
+  são compras, negativos são pagamentos/estornos). Ignore o "Pagamento recebido" da fatura anterior; estornos
+  abatem a categoria. Dê o total gasto por categoria (do maior para o menor), qual categoria pesou mais e o
+  total geral de compras líquidas, em reais com 2 casas. Termine com 2 sugestões práticas de economia.
+check:
+  type: regex
+  normalize_numbers: true
+  pattern: '(?is)(?=.*supermercado)(?=.*\b1334\.85\b)(?=.*\b468\.90?\b)(?=.*\b3244\.92\b)'

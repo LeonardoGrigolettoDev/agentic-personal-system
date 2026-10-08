@@ -1,0 +1,16 @@
+key: debug-py-divide-conta
+category: debugging
+title: Divisão de despesas perdendo centavos (Python, Decimal)
+tenant: pessoal
+agent: engineering
+fixture: debug-py-divide-conta
+expected_task_type: debugging
+tags: [python, dinheiro]
+prompt: |
+  Minha planilha de despesas da viagem com amigos tem um script em {workdir} que divide a conta. Dividir
+  R$ 100,00 por 3 dá R$ 99,99 no total, e os valores acima de mil saem sem o ponto de milhar. Corrija o
+  código (os testes com `python3 -m unittest` descrevem a regra e não devem mudar) e explique a correção.
+check:
+  type: command
+  run: python3 -m unittest -q
+  protect: [test_dinheiro.py, Makefile]

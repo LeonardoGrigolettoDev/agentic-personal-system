@@ -1,0 +1,17 @@
+key: debug-ts-competencia-mes
+category: debugging
+title: Competência e vencimento com mês errado (TypeScript, Date)
+tenant: pessoal
+agent: engineering
+fixture: debug-ts-competencia-mes
+expected_task_type: debugging
+expected_domain: engineering
+tags: [typescript, datas]
+prompt: |
+  Na minha planilha de finanças (código em {workdir}) as faturas aparecem na competência do mês anterior e
+  o vencimento de fevereiro dia 31 cai em março. Rode `node --test src/*.test.ts`, encontre as causas e
+  corrija o código sem alterar os testes. Explique em poucas frases.
+check:
+  type: command
+  run: node --test src/*.test.ts
+  protect: [src/competencia.test.ts]

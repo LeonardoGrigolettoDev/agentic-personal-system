@@ -1,0 +1,63 @@
+1
+00:00:03,000 --> 00:00:08,333
+[Leo] Bom dia, pessoal. Vamos fazer a planning rápida da sprint 41 do app de entregas.
+
+2
+00:00:08,933 --> 00:00:15,733
+[Ana] Antes de tudo: o crash no login do Android voltou depois da atualização da biblioteca de autenticação.
+
+3
+00:00:16,333 --> 00:00:18,833
+[Leo] Quantos usuários afetados?
+
+4
+00:00:19,433 --> 00:00:25,233
+[Ana] Uns três por cento das sessões no Android 15. Eu pego isso e corrijo até sexta, dia 10.
+
+5
+00:00:25,833 --> 00:00:29,233
+[Leo] Fechado. Carlos, como estão os alertas de latência?
+
+6
+00:00:29,833 --> 00:00:36,500
+[Carlos] Ainda não temos alerta nenhum. Ontem o p95 da API de rastreio passou de dois segundos e ninguém viu.
+
+7
+00:00:37,100 --> 00:00:42,833
+[Carlos] Fico com a configuração dos alertas de latência no Grafana, entrego até quarta, dia 8.
+
+8
+00:00:43,433 --> 00:00:48,100
+[Beatriz] Sobre o cliente Fretex: eles reclamaram do SLA de entrega no interior.
+
+9
+00:00:48,700 --> 00:00:54,633
+[Beatriz] Eu converso com eles sobre o SLA, mas ainda sem data, depende da agenda do diretor deles.
+
+10
+00:00:55,233 --> 00:00:58,233
+[Leo] Ok. E o novo fluxo de rastreio em tempo real?
+
+11
+00:00:58,833 --> 00:01:01,833
+[Ana] O PR está aberto há três dias, falta revisão.
+
+12
+00:01:02,433 --> 00:01:06,367
+[Leo] Eu reviso o PR do novo fluxo de rastreio até amanhã, dia 7.
+
+13
+00:01:06,967 --> 00:01:12,767
+[Carlos] Uma decisão que precisamos tomar: manter o polling de 30 segundos ou ir para websocket?
+
+14
+00:01:13,367 --> 00:01:19,167
+[Leo] Por enquanto mantemos o polling; websocket fica para a sprint 42 depois de medir custo.
+
+15
+00:01:19,767 --> 00:01:25,433
+[Beatriz] Último ponto: o relatório mensal para a diretoria sai na segunda que vem como sempre.
+
+16
+00:01:26,033 --> 00:01:28,833
+[Leo] Perfeito. Obrigado, pessoal, bom trabalho.

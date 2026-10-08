@@ -1,0 +1,17 @@
+key: debug-py-carrinho-compartilhado
+category: debugging
+title: Clientes vendo itens do carrinho de outros (Python)
+tenant: pessoal
+agent: engineering
+fixture: debug-py-carrinho-compartilhado
+expected_task_type: debugging
+expected_domain: engineering
+tags: [python, mini-erp]
+prompt: |
+  Bug grave na loja online do mini-ERP: um cliente novo às vezes já começa com itens de outro cliente no
+  carrinho, e as etiquetas impressas acumulam números de pedidos antigos. O código está em {workdir}
+  (`python3 -m unittest`). Corrija a causa raiz sem alterar os testes e explique o bug.
+check:
+  type: command
+  run: python3 -m unittest -q
+  protect: [test_carrinho.py, Makefile]

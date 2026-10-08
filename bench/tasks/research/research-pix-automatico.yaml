@@ -1,0 +1,21 @@
+key: research-pix-automatico
+category: research
+title: Pix Automático x débito automático, com fontes
+tenant: pessoal
+expected_task_type: research
+timeout_s: 1200
+tags: [financas, web]
+prompt: |
+  Pesquise e explique o que é o Pix Automático do Banco Central: quando começou a valer, como funciona a
+  autorização, para que tipo de cobrança serve e como difere do débito automático tradicional. Diga se faz
+  sentido eu usar para assinaturas e contas fixas. Cite as fontes (links).
+check:
+  type: llm_judge
+  pass_score: 7
+  rubric: |
+    - Informa que o Pix Automático passou a valer em 16 de junho de 2025 (aceitar "junho de 2025").
+    - Explica a autorização prévia única pelo pagador para cobranças recorrentes, gerenciável/cancelável no app do banco.
+    - Cita usos típicos: contas de consumo, escolas, academias, assinaturas, condomínio etc.
+    - Diferencia do débito automático: não depende de convênio entre empresa e banco do pagador / funciona entre instituições.
+    - Recomendação prática coerente para assinaturas e contas fixas.
+    - Cita pelo menos uma fonte com link (idealmente bcb.gov.br); não inventa números ou datas.

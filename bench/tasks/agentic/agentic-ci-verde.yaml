@@ -1,0 +1,17 @@
+key: agentic-ci-verde
+category: agentic
+title: Deixar o CI verde (gofmt, vet e teste falhando)
+tenant: nitro
+agent: engineering
+fixture: agentic-ci-verde
+expected_task_type: debugging
+expected_domain: engineering
+tags: [go, ci]
+prompt: |
+  O CI do serviço de cupons da Nitro está vermelho. O pipeline é o script {workdir}/ci.sh (gofmt, go vet e
+  go test). Faça o `bash ci.sh` passar corrigindo o código — não altere ci.sh nem os testes. Liste cada
+  problema que encontrou e como corrigiu.
+check:
+  type: command
+  run: bash ci.sh
+  protect: [ci.sh, internal/cupom/cupom_test.go]

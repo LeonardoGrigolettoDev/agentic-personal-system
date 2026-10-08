@@ -1,0 +1,21 @@
+key: research-whisper-local-ptbr
+category: research
+title: Transcrição local pt-BR num notebook sem GPU NVIDIA
+tenant: pessoal
+expected_task_type: research
+timeout_s: 1200
+tags: [ia-local, audio, web]
+prompt: |
+  Quero transcrever aulas e reuniões em português localmente num notebook com 16 GB de RAM e GPU integrada
+  AMD (sem NVIDIA). Pesquise e compare whisper.cpp e faster-whisper para esse cenário (backend de GPU/CPU,
+  quantização, modelos large-v3/large-v3-turbo, velocidade e qualidade em pt-BR). Recomende um setup
+  concreto (ferramenta, modelo e parâmetros) e cite as fontes.
+check:
+  type: llm_judge
+  pass_score: 7
+  rubric: |
+    - Reconhece que faster-whisper (CTranslate2) acelera por GPU só com CUDA/NVIDIA e que em AMD roda na CPU.
+    - Menciona que whisper.cpp tem backend Vulkan (ou outro backend de GPU integrada) e modelos quantizados (ex.: q5/q8).
+    - Compara large-v3 e large-v3-turbo (turbo mais rápido, pequena perda de qualidade) e uso de memória com 16 GB.
+    - Recomenda um setup concreto e coerente com o hardware (ferramenta, modelo, idioma pt, threads/quantização).
+    - Cita fontes (repositórios/documentação); não inventa benchmarks com números precisos sem fonte.

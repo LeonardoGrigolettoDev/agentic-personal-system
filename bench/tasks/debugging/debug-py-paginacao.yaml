@@ -1,0 +1,17 @@
+key: debug-py-paginacao
+category: debugging
+title: Paginação do estoque pulando a primeira página (Python)
+tenant: pessoal
+agent: engineering
+fixture: debug-py-paginacao
+expected_task_type: debugging
+expected_domain: engineering
+tags: [python, mini-erp]
+prompt: |
+  Na tela de estoque do meu mini-ERP a primeira página nunca aparece e a última some quando a quantidade não
+  é múltipla do tamanho da página. O módulo Python está em {workdir} (testes com `python3 -m unittest`).
+  Corrija o código sem alterar os testes e diga em uma frase o que estava errado em cada função.
+check:
+  type: command
+  run: python3 -m unittest -q
+  protect: [test_paginacao.py, Makefile]

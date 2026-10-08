@@ -1,0 +1,267 @@
+# Realistic final answers for every regex / json_schema task: each `pass` must satisfy the task's check and
+# each `fail` must not. Keeps checks satisfiable, and not trivially satisfiable, as tasks evolve.
+
+simple-commit-ingles:
+  pass:
+    - "fix(pedidos): correct discount calculation when the coupon has already expired"
+    - "`fix: correct order discount calculation when coupon is expired`"
+  fail:
+    - "fix: corrige desconto do cupom expirado"
+    - "Fixed discount calculation for expired coupons."
+
+simple-regex-cpf:
+  pass:
+    - "`^\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2}$`"
+    - "`^[0-9]{3}\\.[0-9]{3}\\.[0-9]{3}-[0-9]{2}$`"
+    - "`^(?:\\d{3}\\.){2}\\d{3}-\\d{2}$`"
+  fail:
+    - "`\\d{3}.\\d{3}.\\d{3}-\\d{2}`"
+    - "`^\\d{11}$`"
+
+simple-sql-top-clientes:
+  pass:
+    - |
+      ```sql
+      SELECT c.nome, SUM(p.total) AS total
+      FROM clientes c
+      JOIN pedidos p ON p.cliente_id = c.id
+      WHERE p.status = 'pago'
+        AND p.criado_em >= '2026-01-01' AND p.criado_em < '2027-01-01'
+      GROUP BY c.id, c.nome
+      ORDER BY total DESC
+      LIMIT 5;
+      ```
+    - |
+      SELECT c.nome, SUM(p.total) AS valor_total
+      FROM clientes c JOIN pedidos p ON p.cliente_id = c.id
+      WHERE p.status = 'pago' AND EXTRACT(YEAR FROM p.criado_em) = 2026
+      GROUP BY c.nome ORDER BY valor_total DESC LIMIT 5;
+  fail:
+    - "SELECT nome, total FROM clientes JOIN pedidos ON pedidos.cliente_id = clientes.id ORDER BY total DESC LIMIT 5"
+    - "SELECT c.nome, SUM(p.total) AS total FROM clientes c JOIN pedidos p ON p.cliente_id = c.id WHERE p.status = 'pago' GROUP BY c.id, c.nome ORDER BY total DESC LIMIT 5"
+
+simple-cron-dias-uteis:
+  pass:
+    - "`30 7 * * 1-5`"
+    - "30 7 * * MON-FRI"
+  fail:
+    - "`0 7 * * 1-5`"
+    - "`30 7 * * *`"
+
+simple-extrai-contato:
+  pass:
+    - '{"nome": "Mariana Souza", "empresa": "Fretex", "email": "mariana.souza@fretex.com.br", "telefone": "+5511987654321"}'
+    - |
+      ```json
+      {"nome": "Mariana Souza", "empresa": "Fretex (logística)", "email": "mariana.souza@fretex.com.br",
+       "telefone": "+5511987654321"}
+      ```
+  fail:
+    - '{"nome": "Mariana Souza", "empresa": "Fretex", "email": "mariana.souza@fretex.com.br", "telefone": "(11) 98765-4321"}'
+
+simple-actually-atualmente:
+  pass:
+    - >-
+      "Actually" significa "na verdade" ou "de fato"; "atualmente" em inglês é "currently" ou "nowadays".
+      Exemplo: "Actually, I prefer Go." / "I'm currently working at Nitro."
+  fail:
+    - "Actually significa atualmente. Exemplo: Actually I live in São Paulo."
+
+simple-git-desfaz-commit:
+  pass:
+    - "`git reset --soft HEAD~1` desfaz o commit e mantém as alterações em stage."
+    - "Use `git reset HEAD^` (modo mixed): o commit some e os arquivos continuam modificados."
+  fail:
+    - "`git revert HEAD`"
+    - "`git commit --amend`"
+
+simple-http-status-estoque:
+  pass:
+    - "409 Conflict: o pedido conflita com o estado atual do estoque."
+    - "Use 422 Unprocessable Content, pois a requisição é válida mas não pode ser processada."
+  fail:
+    - "400 Bad Request."
+
+simple-juros-compostos:
+  pass:
+    - "O valor final é R$ 11.268,25."
+    - "Montante: 10000 × 1,01^12 ≈ 11268.25 reais."
+  fail:
+    - "O valor final é R$ 11.200,00 (juros simples)."
+
+medium-review-pr-relatorio:
+  pass:
+    - |
+      [
+        {"arquivo": "internal/relatorios/handler.go", "linha": 26, "severidade": "critica",
+         "problema": "SQL injection: query montada com fmt.Sprintf usando cliente e status vindos da URL",
+         "sugestao": "Usar placeholders ($1, $2) em h.DB.Query"},
+        {"arquivo": "internal/relatorios/handler.go", "linha": 30, "severidade": "alta",
+         "problema": "rows nunca é fechado (falta defer rows.Close()), vazamento de conexões",
+         "sugestao": "defer rows.Close() logo após o Query e checar rows.Err()"},
+        {"arquivo": "internal/relatorios/handler.go", "linha": 39, "severidade": "media",
+         "problema": "erro do rows.Scan ignorado",
+         "sugestao": "Tratar o erro do Scan e responder 500"},
+        {"arquivo": "internal/relatorios/handler.go", "linha": 40, "severidade": "media",
+         "problema": "CPF (dado pessoal) escrito no log",
+         "sugestao": "Remover o CPF do log (LGPD)"}
+      ]
+  fail:
+    - '[{"arquivo": "handler.go", "linha": 26, "severidade": "baixa", "problema": "nome de variável ruim aqui", "sugestao": "renomear a variável"}]'
+
+medium-log-erros-5xx:
+  pass:
+    - '{"/v1/motoboys/{id}/proxima": 4, "/v1/pedidos": 3, "/v1/pedidos/{id}": 2, "/v1/entregas": 2}'
+    - |
+      Contagem:
+      ```json
+      {"/v1/entregas": 2, "/v1/motoboys/{id}/proxima": 4, "/v1/pedidos": 3, "/v1/pedidos/{id}": 2, "/v1/login": 0}
+      ```
+  fail:
+    - '{"/v1/motoboys/{id}/proxima": 4, "/v1/pedidos": 5, "/v1/entregas": 2}'
+    - '{"/v1/motoboys/{id}/proxima": 4, "/v1/pedidos": 3, "/v1/pedidos/{id}": 2, "/v1/entregas": 2, "/healthz": 1}'
+
+medium-plano-estudos-ingles:
+  pass:
+    - |
+      {"objetivo": "Conversar com fluência numa entrevista técnica em inglês",
+       "semanas": [
+         {"semana": 1, "foco": "Pitch pessoal", "atividades": ["Escrever o pitch", "Gravar 3 vezes", "Shadowing 20 min", "Vocabulário de Go"], "meta_verificavel": "Gravar pitch de 2 min sem pausas longas"},
+         {"semana": 2, "foco": "Projetos", "atividades": ["STAR para 3 projetos", "Ler em voz alta", "Shadowing", "Mock com amigo"], "meta_verificavel": "Contar 3 histórias STAR em 3 min cada"},
+         {"semana": 3, "foco": "System design falado", "atividades": ["Explicar um design", "Vocabulário de arquitetura", "Gravar e ouvir", "Mock online"], "meta_verificavel": "Explicar o design do mini-ERP em 10 min"},
+         {"semana": 4, "foco": "Simulações", "atividades": ["2 mocks completos", "Revisar erros", "Perguntas ao entrevistador", "Descanso ativo"], "meta_verificavel": "Concluir 2 mock interviews gravadas"}],
+       "recursos": ["Pramp", "YouGlish", "Tech Interview Handbook"]}
+  fail:
+    - '{"objetivo": "Melhorar o inglês", "semanas": [{"semana": 1, "foco": "Tudo", "atividades": ["estudar"], "meta_verificavel": "ok"}], "recursos": []}'
+
+medium-status-mini-erp:
+  pass:
+    - |
+      ## Concluído
+      - Relatório de vendas por categoria (validado pela Marina); backup noturno com restore testado.
+      ## Em andamento
+      - Tela de inventário (revisão mobile, Rafa); cobrança Pix (Leo, webhook não testado).
+      ## Bloqueios
+      - NF-e: certificado digital A1 vencido em 30/09; Marina pede a renovação (~10 dias úteis).
+      ## Próximos passos
+      - Marina: renovar certificado até 17/10. Leo: retomar NF-e. App mobile adiado para depois da NF-e.
+  fail:
+    - "Tudo andando bem, sem bloqueios. Próximos passos: continuar."
+
+debug-log-panic-rotas:
+  pass:
+    - |
+      Causa raiz em internal/entrega/rota.go, linha 27: o laço usa `i <= len(r.Paradas)`, então quando todas as
+      paradas restantes já foram entregues ele acessa r.Paradas[len] (linha 28) e dá panic. Só acontece em rotas
+      sem parada pendente depois da atual. Correção: `for i := atual + 1; i < len(r.Paradas); i++ {`.
+  fail:
+    - "O problema está no main.go linha 22, falta tratar o erro do strconv.Atoi."
+
+agentic-git-bisect-frete:
+  pass:
+    - "O primeiro commit ruim é 4137aae \"refactor: simplifica cálculo do frete\": trocou >= por > no frete grátis."
+  fail:
+    - "O commit culpado é \"fix: reajuste do frete fora de SP\"."
+
+research-go-versao-atual:
+  pass:
+    - "A versão estável mais recente é o Go 1.27 (release notes: https://go.dev/doc/go1.27). Novidades: ..."
+    - "Go 1.27.1 (patch de 01/09/2026) sobre o Go 1.27; notas: https://go.dev/doc/go1.27#language"
+  fail:
+    - "A versão mais recente é o Go 1.27. Veja https://golang.org/doc/devel/release."
+    - "A versão estável mais recente é o Go 1.21 … https://go.dev/doc/go1.21"
+
+finance-fatura-categorias:
+  pass:
+    - |
+      | Categoria | Total |
+      |---|---|
+      | supermercado | R$ 1.334,85 |
+      | restaurante | R$ 468,90 |
+      | casa | R$ 458,73 |
+      Categoria que mais pesou: supermercado. Total líquido de compras: R$ 3.244,92.
+    - "supermercado: 1334.85; restaurante: 468.9; total geral 3244.92"
+  fail:
+    - "supermercado: R$ 1.334,85; restaurante: R$ 780,90 (sem considerar o estorno); total R$ 3.556,92"
+
+finance-parcelas-futuras:
+  pass:
+    - |
+      1. Já comprometido na fatura de outubro: R$ 1.605,93.
+      2. Total restante das parcelas depois desta fatura: R$ 6.918,61.
+      3. Terminam nesta fatura: GELADEIRA BRASTEMP (10/10) e TENIS NIKE (6/6).
+  fail:
+    - "Outubro: R$ 2.035,78 em parcelas. Restante: R$ 7.348,46. Termina a geladeira e o tênis."
+
+finance-orcamento-50-30-20:
+  pass:
+    - '{"necessidades_pct": 63.0, "desejos_pct": 21.9, "investimentos_pct": 10.6, "sobra": 383.10, "ajustes": ["Renegociar o aluguel ou dividir o condomínio", "Mandar a sobra de R$ 383,10 para investimentos"]}'
+  fail:
+    - '{"necessidades_pct": 50, "desejos_pct": 30, "investimentos_pct": 20, "sobra": 0, "ajustes": ["seguir a regra", "economizar mais"]}'
+
+finance-cdb-vs-lci:
+  pass:
+    - |
+      CDB: bruto R$ 5.088,00, IR R$ 763,20, líquido R$ 4.324,80.
+      LCI: R$ 4.200,00 isento. O CDB rende R$ 124,80 a mais.
+  fail:
+    - "CDB: R$ 5.088,00 de rendimento; LCI: R$ 4.200,00. O CDB rende R$ 888,00 a mais."
+
+finance-reembolso-nitro:
+  pass:
+    - |
+      ```json
+      {"nao_lancadas": [
+        {"data": "2026-09-10", "estabelecimento": "GITHUB INC", "valor": 21.00},
+        {"data": "2026-09-15", "estabelecimento": "UBER *TRIP", "valor": 37.65},
+        {"data": "2026-09-25", "estabelecimento": "ESTACIONAMENTO ESTAPAR", "valor": 42.00}],
+       "total_nao_lancado": 100.65}
+      ```
+  fail:
+    - '{"nao_lancadas": [{"data": "2026-09-10", "estabelecimento": "GITHUB INC", "valor": 21.0}], "total_nao_lancado": 21.0}'
+
+media-metadados-audio:
+  pass:
+    - "Duração: 12,0 s; taxa de amostragem: 16000 Hz; canais: 1 (mono), PCM 16 bits. Já está no formato ideal."
+    - "12 segundos, 16 kHz, mono."
+    - "- Duração: 12 s\n- Taxa de amostragem: 16,000 Hz\n- Canais: 1\n- Já está no formato ideal."
+    - "Duração 12.0 s, taxa de amostragem 16.000 Hz, 1 canal, PCM 16 bits."
+  fail:
+    - "Duração: 12 s; taxa: 44100 Hz; estéreo."
+    - "Duração: 12 s; taxa de amostragem: 16000 Hz; canais: 2 (estéreo)."
+
+media-recado-whatsapp:
+  pass:
+    - "- Quem: Fernanda (Nitro)\n- Reunião de alinhamento do app de entregas remarcada para quinta-feira às 15h, sala 2\n- Levar o relatório de bugs da última sprint"
+  fail:
+    - "A reunião foi remarcada para sexta às 10h."
+
+media-aula-concorrencia:
+  pass:
+    - "Resumo: a aula trata de concorrência em Go: goroutines executam funções concorrentes, canais permitem a comunicação segura e o WaitGroup espera várias goroutines terminarem."
+  fail:
+    - "A aula fala de goroutines e canais."
+
+media-ata-reuniao:
+  pass:
+    - |
+      {"decisoes": ["Manter o polling de 30 s; websocket fica para a sprint 42"],
+       "acoes": [
+         {"responsavel": "Ana", "tarefa": "Corrigir o crash no login do Android", "prazo": "2026-10-10"},
+         {"responsavel": "Carlos", "tarefa": "Configurar alertas de latência no Grafana", "prazo": "2026-10-08"},
+         {"responsavel": "Leo", "tarefa": "Revisar o PR do novo fluxo de rastreio", "prazo": "2026-10-07"},
+         {"responsavel": "Beatriz", "tarefa": "Conversar com a Fretex sobre o SLA", "prazo": null}]}
+  fail:
+    - |
+      {"decisoes": ["Usar websocket já"],
+       "acoes": [
+         {"responsavel": "Ana", "tarefa": "Corrigir o crash no login", "prazo": "2026-10-11"},
+         {"responsavel": "Carlos", "tarefa": "Alertas no Grafana", "prazo": "2026-10-08"},
+         {"responsavel": "Leo", "tarefa": "Revisar PR", "prazo": "2026-10-07"},
+         {"responsavel": "Beatriz", "tarefa": "Falar com a Fretex", "prazo": "2026-10-13"}]}
+
+media-video-aula-ingles:
+  pass:
+    - "Tópico: present perfect. Formação: have/has + past participle. Exemplo da aula: \"I have visited London twice\"."
+  fail:
+    - "Tópico: simple past. Exemplo: I visited London."

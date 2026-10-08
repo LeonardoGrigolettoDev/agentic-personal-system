@@ -1,0 +1,39 @@
+key: medium-review-pr-relatorio
+category: medium
+title: Code review de PR com SQL injection e vazamento de recursos (Go)
+tenant: nitro
+agent: engineering
+fixture: medium-review-pr-relatorio
+expected_task_type: code_review
+expected_domain: engineering
+tags: [go, seguranca, review]
+prompt: |
+  Revise o PR em {workdir}/pr-42.diff (handler de relatórios do painel de atendimento da Nitro). Liste os
+  problemas encontrados como um array JSON, do mais grave para o menos grave, cada item com:
+  {"arquivo": "...", "linha": <número da linha no arquivo novo>, "severidade": "critica|alta|media|baixa",
+  "problema": "...", "sugestao": "..."}. Responda somente com o JSON.
+check:
+  type: json_schema
+  schema:
+    type: array
+    minItems: 3
+    items:
+      type: object
+      required: [arquivo, linha, severidade, problema, sugestao]
+      properties:
+        arquivo: {type: string, pattern: "handler\\.go"}
+        linha: {type: integer, minimum: 1, maximum: 58}
+        severidade: {enum: [critica, alta, media, baixa]}
+        problema: {type: string, minLength: 10}
+        sugestao: {type: string, minLength: 10}
+    allOf:
+      - contains:
+          properties:
+            problema: {pattern: "[Ss][Qq][Ll]|[Ii]nje[cç]"}
+            severidade: {enum: [critica, alta]}
+      - contains:
+          properties:
+            problema: {pattern: "[Cc]lose|[Ff]ech|[Vv]azamento|[Ll]eak|[Rr]ecurso"}
+      - contains:
+          properties:
+            problema: {pattern: "[Ss]can|[Ee]rro.*(ignorad|tratad|verific)|[Ii]gnor"}

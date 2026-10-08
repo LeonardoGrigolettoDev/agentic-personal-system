@@ -1,0 +1,31 @@
+key: refactor-py-numeros-magicos
+category: refactor
+title: Extrair números mágicos da cotação de frete (Python)
+tenant: pessoal
+agent: engineering
+fixture: refactor-py-numeros-magicos
+expected_task_type: refactor
+expected_domain: engineering
+tags: [python, mini-erp]
+prompt: |
+  O módulo {workdir}/frete.py tem dezenas de números mágicos (taxas, limites, fatores, prazos). Extraia-os
+  para constantes nomeadas no topo do módulo (MAIÚSCULAS, nomes que expliquem a regra de negócio), sem mudar
+  o comportamento. Os testes (`python3 -m unittest`) não podem ser alterados.
+check:
+  type: command
+  run: |
+    set -e
+    python3 -m unittest -q
+    python3 - <<'PY'
+    import ast, sys
+    tree = ast.parse(open("frete.py", encoding="utf-8").read())
+    magic = [(fn.name, n.lineno, n.value) for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
+             for n in ast.walk(fn) if isinstance(n, ast.Constant) and type(n.value) in (int, float)
+             and n.value not in (0, 1, 2)]
+    consts = [t.id for n in tree.body if isinstance(n, (ast.Assign, ast.AnnAssign))
+              for t in (n.targets if isinstance(n, ast.Assign) else [n.target])
+              if isinstance(t, ast.Name) and t.id.isupper()]
+    print(f"números mágicos restantes: {magic}; constantes: {len(consts)}")
+    sys.exit(0 if len(magic) <= 1 and len(consts) >= 8 else 1)
+    PY
+  protect: [test_frete.py, Makefile]

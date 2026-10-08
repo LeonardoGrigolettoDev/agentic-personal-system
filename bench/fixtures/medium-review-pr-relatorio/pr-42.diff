@@ -1,0 +1,63 @@
+diff --git a/internal/relatorios/handler.go b/internal/relatorios/handler.go
+new file mode 100644
+index 0000000..3f1c2aa
+--- /dev/null
++++ b/internal/relatorios/handler.go
+@@ -0,0 +1,58 @@
++package relatorios
++
++import (
++	"database/sql"
++	"encoding/json"
++	"fmt"
++	"log"
++	"net/http"
++)
++
++type Handler struct {
++	DB *sql.DB
++}
++
++type linha struct {
++	PedidoID int     `json:"pedido_id"`
++	Total    float64 `json:"total"`
++	CPF      string  `json:"cpf"`
++}
++
++// PedidosDoCliente lista os pedidos de um cliente para o painel de atendimento.
++// GET /v1/relatorios/pedidos?cliente=<id>&status=<status>
++func (h *Handler) PedidosDoCliente(w http.ResponseWriter, r *http.Request) {
++	cliente := r.URL.Query().Get("cliente")
++	status := r.URL.Query().Get("status")
++	query := fmt.Sprintf("SELECT p.id, p.total, c.cpf FROM pedidos p JOIN clientes c ON c.id = p.cliente_id "+
++		"WHERE p.cliente_id = '%s' AND p.status = '%s'", cliente, status)
++	log.Printf("relatorio pedidos cliente=%s query=%s", cliente, query)
++
++	rows, err := h.DB.Query(query)
++	if err != nil {
++		http.Error(w, err.Error(), http.StatusInternalServerError)
++		return
++	}
++
++	var out []linha
++	for rows.Next() {
++		var l linha
++		rows.Scan(&l.PedidoID, &l.Total, &l.CPF)
++		log.Printf("pedido %d cpf %s total %.2f", l.PedidoID, l.CPF, l.Total)
++		out = append(out, l)
++	}
++
++	w.Header().Set("Content-Type", "application/json")
++	json.NewEncoder(w).Encode(out)
++}
++
++// TotalDoMes soma o faturamento do mês (YYYY-MM).
++func (h *Handler) TotalDoMes(w http.ResponseWriter, r *http.Request) {
++	mes := r.URL.Query().Get("mes")
++	var total float64
++	err := h.DB.QueryRow("SELECT sum(total) FROM pedidos WHERE to_char(criado_em, 'YYYY-MM') = $1", mes).Scan(&total)
++	if err != nil {
++		log.Println(err)
++	}
++	fmt.Fprintf(w, `{"mes": "%s", "total": %v}`, mes, total)
++}

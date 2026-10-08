@@ -1,0 +1,24 @@
+key: research-ielts-toefl
+category: research
+title: IELTS ou TOEFL para dev que quer trabalhar fora
+tenant: pessoal
+agent: learning
+expected_task_type: research
+expected_domain: learning
+timeout_s: 1200
+tags: [ingles, carreira, web]
+prompt: |
+  Sou desenvolvedor brasileiro e quero trabalhar remoto para fora ou, mais tarde, imigrar (Canadá ou
+  Europa). Pesquise e compare IELTS e TOEFL iBT: quem aceita cada um (empresas, vistos, Canadá
+  especificamente), formato, validade do resultado, custo aproximado no Brasil e como me preparar em
+  3 meses. Recomende um dos dois para o meu caso e cite as fontes.
+check:
+  type: llm_judge
+  pass_score: 7
+  rubric: |
+    - Informa validade de 2 anos para ambos os resultados.
+    - Aponta que no Express Entry (Canadá) o IELTS General Training é aceito e o TOEFL iBT não (alternativas: CELPIP-General, PTE Core); se citar o TOEFL Essentials, trata com ressalva (aprovado em 2025, aceitação a confirmar na lista oficial).
+    - Distingue IELTS Academic de General Training.
+    - Dá custo aproximado em reais com ressalva de que muda, sem números absurdos.
+    - Plano de preparação de 3 meses concreto e recomendação coerente com o objetivo de imigrar.
+    - Cita fontes oficiais (ielts.org, ets.org, canada.ca ou similares).

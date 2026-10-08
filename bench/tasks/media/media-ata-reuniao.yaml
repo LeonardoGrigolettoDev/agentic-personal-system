@@ -1,0 +1,54 @@
+key: media-ata-reuniao
+category: media
+title: Ata e itens de ação a partir da transcrição de uma reunião
+tenant: nitro
+agent: projects
+fixture: media-ata-reuniao
+expected_task_type: summary
+tags: [transcricao, reuniao]
+prompt: |
+  Em {workdir}/reuniao-sprint-41.srt está a transcrição (com falantes) da planning da sprint 41 do app de
+  entregas da Nitro, feita em 06/10/2026. Extraia os itens de ação e responda somente com JSON:
+  {"decisoes": ["..."], "acoes": [{"responsavel": "...", "tarefa": "...", "prazo": "AAAA-MM-DD" ou null}]}
+check:
+  type: json_schema
+  schema:
+    type: object
+    required: [decisoes, acoes]
+    properties:
+      decisoes:
+        type: array
+        minItems: 1
+        contains: {type: string, pattern: "[Pp]olling|[Ww]eb ?[Ss]ocket"}
+      acoes:
+        type: array
+        minItems: 4
+        maxItems: 6
+        items:
+          type: object
+          required: [responsavel, tarefa, prazo]
+          properties:
+            responsavel: {type: string}
+            tarefa: {type: string, minLength: 5}
+            prazo: {type: [string, "null"]}
+        allOf:
+          - contains:
+              properties:
+                responsavel: {pattern: "Ana"}
+                tarefa: {pattern: "[Cc]rash|[Ll]ogin"}
+                prazo: {const: "2026-10-10"}
+          - contains:
+              properties:
+                responsavel: {pattern: "Carlos"}
+                tarefa: {pattern: "[Aa]lerta|[Gg]rafana|[Ll]at[eê]ncia"}
+                prazo: {const: "2026-10-08"}
+          - contains:
+              properties:
+                responsavel: {pattern: "Leo"}
+                tarefa: {pattern: "PR|[Rr]evis|[Rr]astreio"}
+                prazo: {const: "2026-10-07"}
+          - contains:
+              properties:
+                responsavel: {pattern: "Beatriz"}
+                tarefa: {pattern: "Fretex|SLA"}
+                prazo: {type: "null"}

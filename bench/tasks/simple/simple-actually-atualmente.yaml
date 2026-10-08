@@ -1,0 +1,14 @@
+key: simple-actually-atualmente
+category: simple
+title: Falso cognato actually x atualmente
+tenant: pessoal
+agent: learning
+expected_task_type: learning
+expected_domain: learning
+tags: [ingles]
+prompt: |
+  Explique em até 4 frases a diferença entre "actually" e "atualmente" para quem fala português, e dê uma
+  frase de exemplo em inglês para "na verdade" e outra para "atualmente".
+check:
+  type: regex
+  pattern: '(?is)(?=.*actually)(?=.*\b(currently|nowadays|these days)\b)(?=.*(na verdade|de fato|realmente))'

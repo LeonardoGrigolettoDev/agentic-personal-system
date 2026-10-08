@@ -1,0 +1,18 @@
+key: media-video-aula-ingles
+category: media
+title: Notas de uma videoaula de inglês (áudio em inglês)
+tenant: pessoal
+agent: engineering
+fixture: media-video-aula-ingles
+generated_files: [aula-ingles.mp4]
+requires: [edge]                     # edge_pipeline.sh: EDGE_API_KEY in the sandbox + edge reachable
+expected_task_type: summary
+timeout_s: 1500
+tags: [video, transcricao, ingles]
+prompt: |
+  Em {workdir}/aula-ingles.mp4 está um trecho de videoaula de inglês. Extraia o áudio e transcreva (pipeline
+  local de mídia, skill transcript_to_notes com --upload, --language en e --no-ingest; é um teste) e me dê: o tópico gramatical, a regra de formação, o
+  exemplo citado na aula e 3 exercícios curtos (com respostas) em inglês.
+check:
+  type: regex
+  pattern: '(?is)(?=.*present\s+perfect)(?=.*\b(have|has)\b)(?=.*(past\s+participle|partic[ií]pio))(?=.*london)'

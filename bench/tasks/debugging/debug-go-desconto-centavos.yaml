@@ -1,0 +1,17 @@
+key: debug-go-desconto-centavos
+category: debugging
+title: Total com desconto 1 centavo acima do esperado (Go)
+tenant: nitro
+agent: engineering
+fixture: debug-go-desconto-centavos
+expected_task_type: debugging
+expected_domain: engineering
+tags: [go, dinheiro]
+prompt: |
+  No app de pedidos da Nitro o financeiro reclamou que alguns totais com desconto saem 1 centavo acima do
+  esperado. O módulo Go está em {workdir}. Rode os testes, encontre a causa raiz e corrija o código de
+  produção (não altere os testes). No fim, explique em até 3 frases qual era o bug.
+check:
+  type: command
+  run: go vet ./... && go test -count=1 ./...
+  protect: [desconto_test.go]

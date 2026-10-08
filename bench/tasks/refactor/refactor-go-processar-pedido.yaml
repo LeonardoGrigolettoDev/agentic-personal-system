@@ -1,0 +1,27 @@
+key: refactor-go-processar-pedido
+category: refactor
+title: Quebrar ProcessarPedido gigante e remover validação duplicada (Go)
+tenant: pessoal
+agent: engineering
+fixture: refactor-go-processar-pedido
+expected_task_type: refactor
+expected_domain: engineering
+tags: [go, mini-erp]
+prompt: |
+  A função ProcessarPedido do meu mini-ERP (em {workdir}) cresceu demais: valida endereço de entrega e de
+  cobrança com código copiado, soma itens, aplica cupom e calcula frete, tudo junto. Refatore sem mudar o
+  comportamento: extraia funções com nomes claros, elimine a duplicação da validação de endereço e deixe
+  ProcessarPedido curta (no máximo uns 25-30 linhas). Os testes existentes não podem ser alterados e têm que
+  continuar passando. Resuma o que mudou.
+check:
+  type: command
+  run: |
+    set -e
+    go vet ./...
+    go test -count=1 ./...
+    f=$(grep -l '^func ProcessarPedido(' *.go | head -1)
+    n=$(awk '/^func ProcessarPedido\(/{f=1} f{n++} f&&/^}/{print n; exit}' "$f")
+    dup=$(grep -o 'CEP inválido' $(ls *.go | grep -v _test.go) | wc -l)
+    echo "ProcessarPedido: ${n:-?} linhas; mensagens 'CEP inválido' no código: $dup"
+    [ "${n:-999}" -le 30 ] && [ "$dup" -le 1 ]
+  protect: [pedido_test.go]

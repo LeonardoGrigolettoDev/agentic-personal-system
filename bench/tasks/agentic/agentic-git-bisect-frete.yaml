@@ -1,0 +1,18 @@
+key: agentic-git-bisect-frete
+category: agentic
+title: Achar com git bisect o commit que quebrou o frete grátis
+tenant: pessoal
+agent: engineering
+fixture: agentic-git-bisect-frete
+setup: bash criar-repo.sh && rm -f criar-repo.sh
+expected_task_type: debugging
+expected_domain: engineering
+tags: [git, python]
+prompt: |
+  No repositório {workdir}/repo, o teste de frete grátis (`python3 -m unittest`) passava na tag v1.0 e hoje
+  falha no HEAD. Use git bisect (de preferência `git bisect run`) para achar o primeiro commit ruim. Responda
+  com o hash curto e o assunto (subject) desse commit e explique em uma frase o que ele quebrou. Deixe o
+  repositório como encontrou (git bisect reset).
+check:
+  type: regex
+  pattern: '(?is)simplifica\s+c[aá]lculo\s+do\s+frete'

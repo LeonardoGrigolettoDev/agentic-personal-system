@@ -1,0 +1,17 @@
+key: debug-go-contador-metricas
+category: debugging
+title: Contador de métricas sempre zerado (Go, concorrência)
+tenant: nitro
+agent: engineering
+fixture: debug-go-contador-metricas
+expected_task_type: debugging
+expected_domain: engineering
+tags: [go, concorrencia]
+prompt: |
+  O gateway do app de entregas mostra "0 requisições" no painel mesmo com tráfego, e às vezes o processo cai
+  com "concurrent map writes". O pacote de métricas está em {workdir}. Descubra a causa raiz, corrija o código
+  (sem mexer no teste) e confirme com `go test`. Explique o problema em poucas frases.
+check:
+  type: command
+  run: go vet ./... && go test -count=1 ./...
+  protect: [contador_test.go]

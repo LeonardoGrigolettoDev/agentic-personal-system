@@ -1,0 +1,17 @@
+key: debug-go-carrinho-alias
+category: debugging
+title: Variações de carrinho sobrescrevendo umas às outras (Go, slices)
+tenant: pessoal
+agent: engineering
+fixture: debug-go-carrinho-alias
+expected_task_type: debugging
+expected_domain: engineering
+tags: [go, mini-erp]
+prompt: |
+  No simulador de frete do meu mini-ERP, quando gero várias variações a partir do mesmo carrinho, todas
+  terminam com o último item adicionado. O código está em {workdir}. Ache a causa, corrija sem alterar o teste
+  e explique em até 3 frases por que acontecia.
+check:
+  type: command
+  run: go vet ./... && go test -count=1 ./...
+  protect: [carrinho_test.go]

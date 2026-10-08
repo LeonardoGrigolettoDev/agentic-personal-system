@@ -1,0 +1,24 @@
+key: medium-log-erros-5xx
+category: medium
+title: Contar erros 5xx por rota num log de produção
+tenant: nitro
+agent: engineering
+fixture: medium-log-erros-5xx
+expected_domain: engineering
+tags: [logs, observabilidade]
+prompt: |
+  Analise {workdir}/app.log (gateway do app de entregas da Nitro). Conte as requisições HTTP com status 5xx
+  agrupadas por rota: ignore a query string e normalize segmentos numéricos como {id}
+  (ex.: /v1/pedidos/123?x=1 -> /v1/pedidos/{id}). Linhas que não são requisições HTTP não contam. Responda
+  somente com um objeto JSON {"<rota>": <quantidade>} contendo apenas rotas com pelo menos um 5xx.
+check:
+  type: json_schema
+  schema:
+    type: object
+    required: ["/v1/motoboys/{id}/proxima", "/v1/pedidos", "/v1/pedidos/{id}", "/v1/entregas"]
+    properties:
+      "/v1/motoboys/{id}/proxima": {const: 4}
+      "/v1/pedidos": {const: 3}
+      "/v1/pedidos/{id}": {const: 2}
+      "/v1/entregas": {const: 2}
+    additionalProperties: {const: 0}

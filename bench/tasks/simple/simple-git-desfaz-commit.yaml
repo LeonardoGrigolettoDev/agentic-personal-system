@@ -1,0 +1,12 @@
+key: simple-git-desfaz-commit
+category: simple
+title: Desfazer o último commit mantendo as alterações
+tenant: shared
+expected_task_type: conversation
+tags: [git]
+prompt: |
+  Fiz um commit local errado (ainda não dei push). Qual comando desfaz o último commit mas mantém as
+  alterações nos arquivos? Responda com o comando e uma frase.
+check:
+  type: regex
+  pattern: '(?i)git\s+reset\s+(--soft\s+|--mixed\s+)?HEAD(~1?|\^)'

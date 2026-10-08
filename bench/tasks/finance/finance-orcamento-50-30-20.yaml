@@ -1,0 +1,26 @@
+key: finance-orcamento-50-30-20
+category: finance
+title: Orçamento de outubro contra a regra 50/30/20
+tenant: pessoal
+agent: finance
+fixture: finance-orcamento-50-30-20
+expected_task_type: finance_analysis
+expected_domain: finance
+tags: [orcamento]
+prompt: |
+  Minha renda líquida é R$ 8.500,00. Com o orçamento de outubro em {workdir}/orcamento-outubro.csv (tipo =
+  necessidade, desejo ou investimento), compare com a regra 50/30/20. Responda somente com JSON:
+  {"necessidades_pct": n, "desejos_pct": n, "investimentos_pct": n, "sobra": n, "ajustes": ["..."]}
+  com percentuais da renda arredondados a 1 casa, sobra = renda − total orçado (em reais) e pelo menos
+  2 ajustes concretos para chegar perto da regra.
+check:
+  type: json_schema
+  schema:
+    type: object
+    required: [necessidades_pct, desejos_pct, investimentos_pct, sobra, ajustes]
+    properties:
+      necessidades_pct: {type: number, minimum: 62.9, maximum: 63.1}
+      desejos_pct: {type: number, minimum: 21.8, maximum: 22.0}
+      investimentos_pct: {type: number, minimum: 10.5, maximum: 10.7}
+      sobra: {type: number, minimum: 383.05, maximum: 383.15}
+      ajustes: {type: array, minItems: 2, items: {type: string, minLength: 10}}

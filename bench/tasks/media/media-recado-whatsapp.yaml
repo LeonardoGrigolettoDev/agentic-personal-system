@@ -1,0 +1,19 @@
+key: media-recado-whatsapp
+category: media
+title: Extrair compromisso de um áudio de WhatsApp
+tenant: nitro
+agent: engineering
+fixture: media-recado-whatsapp
+generated_files: [recado.wav]
+requires: [edge]                     # edge_pipeline.sh: EDGE_API_KEY in the sandbox + edge reachable
+expected_task_type: summary
+timeout_s: 1200
+tags: [audio, transcricao]
+prompt: |
+  Recebi um áudio de WhatsApp de uma colega da Nitro: {workdir}/recado.wav. Transcreva-o com o pipeline
+  local de mídia (skill transcript_to_notes: edge_pipeline.sh com --upload e --no-ingest, porque é um teste
+  e não deve ir para a base de conhecimento) e me diga em tópicos: quem mandou, qual o
+  compromisso, dia, horário, local e o que preciso levar.
+check:
+  type: regex
+  pattern: '(?is)(?=.*quinta)(?=.*(\b15\s*(h|:00|horas)|quinze))(?=.*(relat[oó]rio|bugs?))'

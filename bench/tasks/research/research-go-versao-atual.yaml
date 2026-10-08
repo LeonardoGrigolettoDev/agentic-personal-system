@@ -1,0 +1,16 @@
+key: research-go-versao-atual
+category: research
+title: Versão estável atual do Go e novidades, com fonte oficial
+tenant: shared
+expected_task_type: research
+expected_domain: engineering
+timeout_s: 1200
+tags: [go, web]
+prompt: |
+  Pesquise na web: qual é a versão estável mais recente do Go hoje? Liste 3 novidades relevantes para quem
+  escreve APIs e CLIs, e cite o link oficial das release notes dessa versão (go.dev).
+check:
+  type: regex
+  # Floor = current stable (Go 1.27, released 2026-08-19): an answer from stale training data must fail.
+  # Bump both 2[7-9] ranges when Go 1.28 ships (expected Feb 2027).
+  pattern: '(?is)(?=.*\bgo\s?1\.(2[7-9]|[3-9]\d)\b)(?=.*https?://(www\.)?go\.dev/doc/go1\.(2[7-9]|[3-9]\d)\b)'

@@ -1,0 +1,13 @@
+key: simple-commit-ingles
+category: simple
+title: Mensagem de commit em inglês (Conventional Commits)
+tenant: nitro
+expected_task_type: summary
+tags: [git, ingles]
+prompt: |
+  Traduza para inglês esta mensagem de commit seguindo Conventional Commits (tipo, escopo opcional, imperativo,
+  minúsculas, sem ponto final): "corrige cálculo do desconto no pedido quando o cupom já expirou".
+  Responda só com a mensagem.
+check:
+  type: regex
+  pattern: '(?im)^\W*fix(\([a-z0-9_-]+\))?: [a-z].*discount.*(coupon|voucher).*(expired|expiry|expiration)'

@@ -1,0 +1,16 @@
+key: finance-cdb-vs-lci
+category: finance
+title: CDB tributado x LCI isenta em 2 anos
+tenant: pessoal
+agent: finance
+expected_task_type: finance_analysis
+expected_domain: finance
+tags: [investimentos, ir]
+prompt: |
+  Tenho R$ 20.000,00 para deixar 2 anos (730 dias). Opção A: CDB a 12% ao ano bruto, com IR de 15% sobre o
+  rendimento no resgate. Opção B: LCI a 10% ao ano, isenta de IR. Juros compostos anuais, sem outras taxas.
+  Qual rende mais líquido e quanto a mais? Mostre o rendimento líquido de cada uma com 2 casas.
+check:
+  type: regex
+  normalize_numbers: true
+  pattern: '(?is)(?=.*\b4324\.80?\b)(?=.*\b4200(\.00?)?\b)(?=.*\b124\.80?\b)(?=.*cdb)'

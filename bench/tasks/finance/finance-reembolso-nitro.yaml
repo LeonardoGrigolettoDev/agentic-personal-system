@@ -1,0 +1,48 @@
+key: finance-reembolso-nitro
+category: finance
+title: Conciliar cartão corporativo com relatório de reembolso
+tenant: nitro
+agent: finance
+fixture: finance-reembolso-nitro
+expected_task_type: finance_analysis
+expected_domain: finance
+tags: [conciliacao, nitro]
+prompt: |
+  Em {workdir} estão o extrato do cartão corporativo da Nitro de setembro (cartao-corporativo-setembro.csv)
+  e o relatório de despesas que eu lancei (relatorio-despesas-setembro.csv, formato brasileiro). Encontre as
+  cobranças do cartão que NÃO entraram no relatório (mesma data e mesmo valor contam como lançadas).
+  Responda somente com JSON:
+  {"nao_lancadas": [{"data": "AAAA-MM-DD", "estabelecimento": "...", "valor": n}], "total_nao_lancado": n}
+check:
+  type: json_schema
+  schema:
+    type: object
+    required: [nao_lancadas, total_nao_lancado]
+    properties:
+      nao_lancadas:
+        type: array
+        minItems: 3
+        maxItems: 3
+        items:
+          type: object
+          required: [data, estabelecimento, valor]
+          properties:
+            data: {type: string, pattern: "^2026-09-\\d{2}$"}
+            valor: {type: number}
+        allOf:
+          - contains:
+              required: [estabelecimento, valor]
+              properties:
+                estabelecimento: {pattern: "[Gg][Ii][Tt][Hh][Uu][Bb]"}
+                valor: {minimum: 20.995, maximum: 21.005}
+          - contains:
+              required: [estabelecimento, valor]
+              properties:
+                estabelecimento: {pattern: "[Uu][Bb][Ee][Rr]"}
+                valor: {minimum: 37.645, maximum: 37.655}
+          - contains:
+              required: [estabelecimento, valor]
+              properties:
+                estabelecimento: {pattern: "[Ee][Ss][Tt][Aa][Cc][Ii][Oo][Nn][Aa][Mm][Ee][Nn][Tt][Oo]|[Ee]stapar|ESTAPAR"}
+                valor: {minimum: 41.995, maximum: 42.005}
+      total_nao_lancado: {type: number, minimum: 100.645, maximum: 100.655}

@@ -1,0 +1,15 @@
+key: simple-juros-compostos
+category: simple
+title: Juros compostos de 12 meses
+tenant: pessoal
+agent: finance
+expected_task_type: finance_analysis
+expected_domain: finance
+tags: [financas]
+prompt: |
+  Quanto R$ 10.000,00 vira depois de 12 meses a 1% ao mês, juros compostos, sem impostos? Responda o valor
+  final com duas casas decimais.
+check:
+  type: regex
+  normalize_numbers: true
+  pattern: '\b11268\.25\b'

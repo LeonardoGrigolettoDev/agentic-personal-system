@@ -1,0 +1,8 @@
+{
+  "name": "nitro-pedidos-resumo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/*.test.ts"
+  }
+}

@@ -1,0 +1,18 @@
+key: medium-go-valida-cpf
+category: medium
+title: Implementar validação e formatação de CPF (Go)
+tenant: pessoal
+agent: engineering
+fixture: medium-go-valida-cpf
+expected_task_type: implementation
+expected_domain: engineering
+tags: [go, mini-erp]
+prompt: |
+  No cadastro de clientes do meu mini-ERP preciso validar CPF. Implemente NormalizaCPF e FormataCPF em
+  {workdir}/cpf.go conforme a documentação das funções (dígitos verificadores, com ou sem máscara, CPFs com
+  todos os dígitos iguais são inválidos). Use só a biblioteca padrão. Os testes em cpf_test.go não podem ser
+  alterados; rode `go test ./...`.
+check:
+  type: command
+  run: go vet ./... && go test -count=1 ./...
+  protect: [cpf_test.go]

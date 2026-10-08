@@ -1,0 +1,14 @@
+item;tipo;valor
+Aluguel;necessidade;2150,00
+Condomínio;necessidade;640,00
+Energia + internet;necessidade;310,00
+Mercado;necessidade;1350,00
+Plano de saúde;necessidade;489,00
+Transporte;necessidade;420,00
+Restaurantes e delivery;desejo;780,00
+Streaming e apps;desejo;98,00
+Academia;desejo;129,90
+Viagem (reserva mensal);desejo;600,00
+Roupas;desejo;250,00
+Tesouro Selic (reserva de emergência);investimento;600,00
+ETF de ações;investimento;300,00

@@ -1,0 +1,17 @@
+key: media-metadados-audio
+category: media
+title: Duração, taxa de amostragem e canais de um WAV
+tenant: pessoal
+agent: engineering
+fixture: media-metadados-audio
+generated_files: [tom.wav]
+expected_task_type: summary
+tags: [audio, ffmpeg]
+prompt: |
+  Antes de mandar um áudio para transcrição quero conferir o formato. Inspecione {workdir}/tom.wav (use
+  ffprobe se houver ou o módulo wave do Python) e responda: duração em segundos, taxa de amostragem, número
+  de canais e se já está no formato ideal para o Whisper (16 kHz mono PCM 16 bits).
+check:
+  type: regex
+  # 16000 / 16.000 / 16,000 / "16 000" Hz or 16 kHz; channels as "mono", "1 canal" or "Canais: 1"
+  pattern: '(?is)(?=.*\b12([.,]0+)?\s*(s\b|seg))(?=.*\b16[.,\s]?000\s*hz|.*\b16([.,]0+)?\s*khz)(?=.*(\bmono\b|\bcana(l|is)\W{0,3}1\b|\b(1|um)\s+canal\b|\b1\s+channel\b|\bchannels?\W{0,3}1\b))'

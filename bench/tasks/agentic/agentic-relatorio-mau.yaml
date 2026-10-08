@@ -1,0 +1,37 @@
+key: agentic-relatorio-mau
+category: agentic
+title: Script de MAU mensal a partir de 3 CSVs de eventos
+tenant: nitro
+agent: engineering
+fixture: agentic-relatorio-mau
+expected_task_type: implementation
+tags: [python, dados, metricas]
+prompt: |
+  Em {workdir} há eventos-2026-07.csv, eventos-2026-08.csv e eventos-2026-09.csv (user_id,evento,timestamp)
+  do app de entregas da Nitro. Escreva {workdir}/relatorio.py (só biblioteca padrão) que gera
+  {workdir}/relatorio.json com o MAU (usuários distintos com qualquer evento no mês) de julho, agosto e
+  setembro de 2026:
+  {"2026-07": {"mau": N, "crescimento_pct": null}, "2026-08": {"mau": N, "crescimento_pct": X}, ...}
+  Regras: o mês é o do timestamp (não o do nome do arquivo); ignore usuários internos (user_id começando
+  com "nitro-"); considere só jul–set/2026; crescimento_pct é em relação ao mês anterior, arredondado a 1
+  casa (null no primeiro mês). Rode o script e mostre o resultado.
+check:
+  type: command
+  run: |
+    set -e
+    test -f relatorio.py
+    rm -f relatorio.json
+    python3 relatorio.py
+    python3 - <<'PY'
+    import json, sys
+    want = {"2026-07": {"mau": 62, "crescimento_pct": None}, "2026-08": {"mau": 87, "crescimento_pct": 40.3},
+            "2026-09": {"mau": 75, "crescimento_pct": -13.8}}
+    got = json.load(open("relatorio.json", encoding="utf-8"))
+    print(got)
+    def same(a, b):
+        return a is None if b is None else a is not None and abs(float(a) - b) < 0.051
+    ok = set(got) == set(want) and all(got[m]["mau"] == w["mau"] and same(got[m]["crescimento_pct"], w["crescimento_pct"])
+                                       for m, w in want.items())
+    sys.exit(0 if ok else 1)
+    PY
+  protect: [eventos-2026-07.csv, eventos-2026-08.csv, eventos-2026-09.csv]

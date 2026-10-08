@@ -1,0 +1,17 @@
+key: medium-py-tabela-price
+category: medium
+title: Simulador de financiamento tabela Price (Python, Decimal)
+tenant: pessoal
+agent: engineering
+fixture: medium-py-tabela-price
+expected_task_type: implementation
+expected_domain: engineering
+tags: [python, financas]
+prompt: |
+  Quero simular financiamentos na minha planilha pessoal. Implemente parcela_price, tabela_price e
+  total_pago em {workdir}/price.py seguindo exatamente as regras do docstring do módulo (Decimal, arredondamento
+  em centavos, última parcela absorve a diferença). Os testes (`python3 -m unittest`) não podem ser alterados.
+check:
+  type: command
+  run: python3 -m unittest -q
+  protect: [test_price.py, Makefile]

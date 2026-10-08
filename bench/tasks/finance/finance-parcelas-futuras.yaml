@@ -1,0 +1,18 @@
+key: finance-parcelas-futuras
+category: finance
+title: Quanto da próxima fatura já está comprometido com parcelas
+tenant: pessoal
+agent: finance
+fixture: finance-parcelas-futuras
+expected_task_type: finance_analysis
+expected_domain: finance
+tags: [cartao, parcelas]
+prompt: |
+  Em {workdir}/fatura-setembro-2026.csv está minha fatura (coluna parcela no formato atual/total; vazia =
+  compra à vista). Calcule: (1) quanto da fatura de outubro já está comprometido com parcelas; (2) o total que
+  ainda falta pagar de todas as parcelas depois desta fatura; (3) quais parcelamentos terminam nesta fatura.
+  Valores em reais com 2 casas.
+check:
+  type: regex
+  normalize_numbers: true
+  pattern: '(?is)(?=.*\b1605\.93\b)(?=.*\b6918\.61\b)(?=.*geladeira)(?=.*(t[eê]nis|nike))'

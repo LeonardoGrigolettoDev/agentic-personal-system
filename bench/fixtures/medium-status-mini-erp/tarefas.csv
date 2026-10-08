@@ -1,0 +1,8 @@
+id;tarefa;status;responsavel;prazo;observacao
+ERP-31;Tela de inventário;em_revisao;Rafa;2026-10-08;falta responsividade mobile
+ERP-32;Emissão de NF-e (homologação SEFAZ-SP);bloqueado;Leo;2026-10-15;certificado A1 vencido em 30/09
+ERP-33;Renovar certificado digital A1;a_fazer;Marina;2026-10-17;pedido à certificadora
+ERP-34;Relatório de vendas por categoria;concluido;Leo;2026-10-03;validado pela contadora
+ERP-35;Cobrança Pix via API do banco;em_andamento;Leo;2026-10-20;webhook de confirmação não testado
+ERP-36;Backup noturno + teste de restore;concluido;Leo;2026-10-01;restore ok
+ERP-37;App mobile (catálogo);adiado;Rafa;;depois da NF-e

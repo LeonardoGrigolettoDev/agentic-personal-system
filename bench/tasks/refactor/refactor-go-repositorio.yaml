@@ -1,0 +1,23 @@
+key: refactor-go-repositorio
+category: refactor
+title: Trocar mapa global por repositório injetado (Go)
+tenant: nitro
+agent: engineering
+fixture: refactor-go-repositorio
+expected_task_type: refactor
+expected_domain: engineering
+tags: [go, testabilidade]
+prompt: |
+  O serviço de assinaturas da Nitro (em {workdir}) usa um mapa global como banco, o que torna os testes
+  frágeis. Refatore para injeção de dependência: uma interface Repositorio (Busca/Salva), um tipo Servico
+  criado com NovoServico(repo) com os métodos Renova e Cancela, e uma implementação em memória segura para
+  concorrência (NovoRepositorioMemoria). O arquivo servico_test.go já usa a API nova e não pode ser
+  alterado. Remova o mapa global.
+check:
+  type: command
+  run: |
+    set -e
+    go vet ./...
+    go test -count=1 ./...
+    if grep -nE '^var[[:space:]]+bancoAssinaturas' *.go; then echo "mapa global ainda existe"; exit 1; fi
+  protect: [servico_test.go]

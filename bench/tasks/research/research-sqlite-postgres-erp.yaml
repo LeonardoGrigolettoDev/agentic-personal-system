@@ -1,0 +1,24 @@
+key: research-sqlite-postgres-erp
+category: research
+title: SQLite ou PostgreSQL para o mini-ERP offline-first
+tenant: pessoal
+agent: engineering
+expected_task_type: research
+expected_domain: engineering
+timeout_s: 1200
+tags: [banco-de-dados, arquitetura, web]
+prompt: |
+  Meu mini-ERP vai rodar numa loja pequena (2 caixas + 1 notebook do escritório), precisa funcionar se a
+  internet cair e sincronizar com a nuvem depois. Pesquise e compare SQLite (com WAL/réplicas tipo Litestream
+  ou LiteFS) e PostgreSQL local para esse caso: concorrência de escrita, backup, sincronização, operação e
+  custo. Termine com uma recomendação clara e os riscos. Cite fontes.
+check:
+  type: llm_judge
+  pass_score: 7
+  rubric: |
+    - Explica corretamente o modelo de concorrência do SQLite (um escritor por vez, WAL permite leitores concorrentes).
+    - Aborda acesso por múltiplas máquinas na rede (SQLite em arquivo compartilhado de rede não é recomendado) ou propõe arquitetura com servidor local.
+    - Compara backup/replicação (ex.: Litestream/LiteFS vs pg_dump/replicação do PostgreSQL) e o caso de internet caindo.
+    - Considera esforço de operação e custo para uma loja pequena.
+    - Dá uma recomendação clara e justificada, com riscos/mitigações.
+    - Cita fontes; não inventa recursos inexistentes.

@@ -1,0 +1,52 @@
+key: agentic-organiza-fotos
+category: agentic
+title: Organizar fotos do celular por data com índice CSV
+tenant: pessoal
+agent: engineering
+fixture: agentic-organiza-fotos
+expected_task_type: implementation
+tags: [arquivos, automacao]
+prompt: |
+  Em {workdir}/fotos estão fotos do meu celular com nomes de vários apps. Organize assim:
+  - só fotos .jpg/.jpeg (qualquer caixa); outros arquivos ficam onde estão;
+  - data e hora vêm do nome: IMG_AAAAMMDD_HHMMSS..., PXL_AAAAMMDD_HHMMSSmmm... (ignore os milissegundos) e
+    "WhatsApp Image AAAA-MM-DD at HH.MM.SS...". Foto sem hora identificável no nome fica em fotos/;
+  - MOVA cada foto para {workdir}/organizadas/AAAA/MM/AAAA-MM-DD_HH-MM-SS.jpg (extensão sempre .jpg);
+  - se o nome de destino já existir, acrescente _2, _3...; processe na ordem dos nomes originais por código
+    de caractere (como sorted() do Python ou `LC_ALL=C ls`);
+  - crie {workdir}/indice.csv com cabeçalho `original,novo` e caminhos relativos a {workdir}
+    (ex.: fotos/IMG_...jpg,organizadas/2026/09/...jpg).
+  No fim, liste o que foi movido e o que ficou.
+check:
+  type: command
+  run: |
+    python3 - <<'PY'
+    import csv, os, sys
+    want = {
+        "organizadas/2026/09/2026-09-12_10-10-10.jpg": "IMG_20260912_101010(1).jpg",
+        "organizadas/2026/09/2026-09-12_10-10-10_2.jpg": "IMG_20260912_101010.jpg",
+        "organizadas/2026/09/2026-09-12_18-15-22.jpg": "IMG_20260912_181522.JPG",
+        "organizadas/2026/09/2026-09-14_08-30-12.jpg": "WhatsApp Image 2026-09-14 at 08.30.12.jpeg",
+        "organizadas/2026/09/2026-09-20_19-30-45.jpg": "PXL_20260920_193045123.jpg",
+        "organizadas/2026/10/2026-10-02_21-05-59.jpg": "WhatsApp Image 2026-10-02 at 21.05.59.jpeg",
+    }
+    problems = []
+    found = sorted(os.path.join(r, f) for r, _, fs in os.walk("organizadas") for f in fs) if os.path.isdir("organizadas") else []
+    if sorted(want) != found:
+        problems.append(f"arquivos em organizadas/: {found}")
+    for path, original in want.items():
+        if os.path.isfile(path) and open(path, encoding="utf-8").read().strip() != original:
+            problems.append(f"{path} não é a foto {original}")
+    left = sorted(os.listdir("fotos")) if os.path.isdir("fotos") else []
+    if left != sorted(["IMG-20261003-WA0007.jpg", "Screenshot_20260921-120000.png", "nota.txt"]):
+        problems.append(f"sobrou em fotos/: {left}")
+    try:
+        rows = list(csv.DictReader(open("indice.csv", encoding="utf-8")))
+        got = {r["novo"].strip().removeprefix("./"): os.path.basename(r["original"].strip()) for r in rows}
+        if got != want:
+            problems.append(f"indice.csv diferente: {got}")
+    except (OSError, KeyError) as exc:
+        problems.append(f"indice.csv inválido: {exc}")
+    print("\n".join(problems) or "fotos ok")
+    sys.exit(1 if problems else 0)
+    PY

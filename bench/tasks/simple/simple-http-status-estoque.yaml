@@ -1,0 +1,13 @@
+key: simple-http-status-estoque
+category: simple
+title: Status HTTP para estoque insuficiente
+tenant: pessoal
+expected_task_type: conversation
+expected_domain: engineering
+tags: [api, http]
+prompt: |
+  Na API do meu mini-ERP, o POST /v1/pedidos é válido sintaticamente mas falha porque não há estoque
+  suficiente. Qual status HTTP devo retornar? Responda o código e justifique em uma frase.
+check:
+  type: regex
+  pattern: '\b(409|422)\b'

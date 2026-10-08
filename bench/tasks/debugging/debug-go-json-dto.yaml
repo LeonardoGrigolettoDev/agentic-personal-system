@@ -1,0 +1,17 @@
+key: debug-go-json-dto
+category: debugging
+title: App mobile recebendo JSON sem cliente e sem valor_total (Go)
+tenant: nitro
+agent: engineering
+fixture: debug-go-json-dto
+expected_task_type: debugging
+expected_domain: engineering
+tags: [go, api]
+prompt: |
+  O app mobile da Nitro quebrou: a API às vezes manda o pedido sem os campos "cliente" e "valor_total".
+  O contrato está documentado no código em {workdir}. Corrija a serialização para cumprir o contrato
+  (os testes descrevem o esperado e não devem ser alterados) e explique as causas.
+check:
+  type: command
+  run: go vet ./... && go test -count=1 ./...
+  protect: [dto_test.go]

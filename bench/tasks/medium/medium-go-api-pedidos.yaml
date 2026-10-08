@@ -1,0 +1,17 @@
+key: medium-go-api-pedidos
+category: medium
+title: API REST de pedidos com net/http (Go 1.22 ServeMux)
+tenant: pessoal
+agent: engineering
+fixture: medium-go-api-pedidos
+expected_task_type: implementation
+expected_domain: engineering
+tags: [go, api, mini-erp]
+prompt: |
+  Implemente NovoServidor em {workdir}/server.go (API de pedidos do mini-ERP) conforme o comentário da
+  função: rotas GET /healthz, POST /v1/pedidos e GET /v1/pedidos/{id}, só com net/http (padrões de rota do
+  Go 1.22+), JSON nas respostas e erros como {"erro": "..."}. Não altere store.go nem server_test.go.
+check:
+  type: command
+  run: go vet ./... && go test -count=1 ./...
+  protect: [server_test.go, store.go]

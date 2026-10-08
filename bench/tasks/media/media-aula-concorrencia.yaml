@@ -1,0 +1,18 @@
+key: media-aula-concorrencia
+category: media
+title: Resumo de aula gravada sobre concorrência em Go
+tenant: pessoal
+agent: engineering
+fixture: media-aula-concorrencia
+generated_files: [aula.wav]
+requires: [edge]                     # edge_pipeline.sh: EDGE_API_KEY in the sandbox + edge reachable
+expected_task_type: summary
+timeout_s: 1200
+tags: [audio, transcricao, estudos]
+prompt: |
+  Gravei um trecho de aula em {workdir}/aula.wav. Transcreva com o pipeline local de mídia (skill
+  transcript_to_notes: edge_pipeline.sh com --upload e --no-ingest, é um teste) e produza notas de estudo: resumo em 3 tópicos, os conceitos citados com uma definição curta de cada e 2
+  perguntas de revisão espaçada.
+check:
+  type: regex
+  pattern: '(?is)(?=.*concorr[eê]ncia)(?=.*go\s?routines?)(?=.*\bcana(l|is)\b|.*channels?)(?=.*wait\s?group)'

@@ -1,0 +1,15 @@
+key: simple-sql-top-clientes
+category: simple
+title: Query dos 5 clientes que mais compraram no ano
+tenant: pessoal
+expected_task_type: implementation
+expected_domain: engineering
+tags: [sql, mini-erp]
+prompt: |
+  No PostgreSQL do meu mini-ERP tenho clientes(id, nome) e pedidos(id, cliente_id, total numeric,
+  criado_em timestamptz, status text). Escreva a query que retorna os 5 clientes com maior soma de total em
+  pedidos com status 'pago' criados em 2026, com nome e valor total, do maior para o menor. Só a query.
+check:
+  type: regex
+  # the year filter must touch criado_em: a literal 2026 near it, or extract/date_part/date_trunc of it
+  pattern: '(?is)(?=.*(criado_em[^;]{0,80}2026|2026[^;]{0,80}criado_em|(extract\s*\(\s*year\s+from|date_part\s*\(\s*''year''\s*,|date_trunc\s*\(\s*''year''\s*,)\s*\w*\.?criado_em))select.*sum\s*\(\s*\w*\.?total\s*\).*from.*join.*(status\s*=\s*''pago''|''pago''\s*=\s*\w*\.?status).*group\s+by.*order\s+by.*desc.*limit\s+5'

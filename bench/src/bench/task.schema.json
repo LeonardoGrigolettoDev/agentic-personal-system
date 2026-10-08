@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aios.local/bench/task.schema.json",
+  "title": "AIOS bench task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["key", "category", "title", "prompt", "tenant", "check"],
+  "properties": {
+    "key": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 48 },
+    "category": { "enum": ["simple", "medium", "debugging", "refactor", "agentic", "research", "finance", "media"] },
+    "title": { "type": "string", "minLength": 3, "maxLength": 120 },
+    "prompt": { "type": "string", "minLength": 20, "description": "pt-BR; {workdir} is replaced by the staged fixture path" },
+    "tenant": { "enum": ["nitro", "pessoal", "shared"] },
+    "agent": { "enum": ["chief", "engineering", "finance", "projects", "personal", "learning"] },
+    "fixture": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "setup": { "type": "string", "minLength": 1, "description": "shell command run in the workdir after staging" },
+    "generated_files": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
+    },
+    "requires": {
+      "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["edge"] },
+      "description": "services the agent must reach; probed before the run, an unmet one skips the task"
+    },
+    "timeout_s": { "type": "integer", "minimum": 30, "maximum": 7200 },
+    "expected_task_type": { "type": "string", "pattern": "^[a-z_]+$" },
+    "expected_domain": { "enum": ["chief", "engineering", "finance", "projects", "personal", "learning"] },
+    "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "check": { "$ref": "#/$defs/check" }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "enum": ["command", "regex", "json_schema", "llm_judge"] } },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "command" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["type", "run"],
+            "properties": {
+              "type": true,
+              "run": { "type": "string", "minLength": 1 },
+              "expect_exit": { "type": "integer", "minimum": 0, "maximum": 255 },
+              "timeout_s": { "type": "integer", "minimum": 5, "maximum": 3600 },
+              "protect": {
+                "type": "array", "minItems": 1, "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9._/-]*$" }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "regex" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["type", "pattern"],
+            "properties": {
+              "type": true,
+              "pattern": { "type": "string", "minLength": 1 },
+              "normalize_numbers": { "type": "boolean" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "json_schema" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["type", "schema"],
+            "properties": { "type": true, "schema": { "type": "object" } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "llm_judge" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["type", "rubric", "pass_score"],
+            "properties": {
+              "type": true,
+              "rubric": { "type": "string", "minLength": 20 },
+              "pass_score": { "type": "number", "minimum": 0, "maximum": 10 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

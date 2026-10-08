@@ -1,0 +1,22 @@
+key: refactor-ts-callbacks-async
+category: refactor
+title: Callbacks aninhados para async/await (TypeScript)
+tenant: nitro
+agent: engineering
+fixture: refactor-ts-callbacks-async
+expected_task_type: refactor
+expected_domain: engineering
+tags: [typescript, async]
+prompt: |
+  O módulo src/resumo.ts do app de pedidos da Nitro (em {workdir}) ainda usa callbacks aninhados no estilo
+  Node antigo. Refatore para async/await: carregaResumo(id) e carregaResumos(ids) devem devolver Promises
+  (erros viram Promise rejeitada), sem nenhum callback. Mantenha as regras de negócio (desconto VIP de 5%,
+  arredondamento em centavos, ordem dos resultados). O teste src/resumo.test.ts já descreve a API nova e não
+  pode ser alterado; rode com `node --test src/*.test.ts`.
+check:
+  type: command
+  run: |
+    set -e
+    node --test src/*.test.ts
+    if grep -nE 'Callback|cb\(|callback' src/resumo.ts; then echo "ainda há callbacks em src/resumo.ts"; exit 1; fi
+  protect: [src/resumo.test.ts, src/db.ts]

@@ -1,0 +1,21 @@
+key: simple-extrai-contato
+category: simple
+title: Extrair contato de mensagem para JSON
+tenant: nitro
+expected_task_type: summary
+tags: [extracao, json]
+prompt: |
+  Extraia os dados de contato desta mensagem e responda somente com JSON
+  {"nome": "...", "empresa": "...", "email": "...", "telefone": "+55DDDNUMERO"} (telefone só com dígitos
+  após o +55): "Fala Leo, tudo certo? Aqui é a Mariana Souza, coordenadora de logística da Fretex. Meu e-mail
+  é mariana.souza@fretex.com.br e o cel/WhatsApp é (11) 98765-4321. Podemos falar sobre o SLA amanhã?"
+check:
+  type: json_schema
+  schema:
+    type: object
+    required: [nome, empresa, email, telefone]
+    properties:
+      nome: {type: string, pattern: "^Mariana Souza$"}
+      empresa: {type: string, pattern: "^[Ff]retex"}
+      email: {const: mariana.souza@fretex.com.br}
+      telefone: {const: "+5511987654321"}

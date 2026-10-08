@@ -1,0 +1,35 @@
+key: medium-plano-estudos-ingles
+category: medium
+title: Plano de 4 semanas de inglês para entrevistas técnicas
+tenant: pessoal
+agent: learning
+expected_task_type: learning
+expected_domain: learning
+tags: [ingles, estudos]
+prompt: |
+  Sou desenvolvedor (Go/TypeScript/Python), leio documentação em inglês bem, mas travo na conversação.
+  Tenho entrevista técnica em inglês daqui a 4 semanas e 1h por dia útil. Monte um plano de estudos e
+  responda somente com JSON no formato:
+  {"objetivo": "...", "semanas": [{"semana": 1, "foco": "...", "atividades": ["..."], "meta_verificavel": "..."}],
+   "recursos": ["..."]}
+  com exatamente 4 semanas, pelo menos 4 atividades por semana e pelo menos 3 recursos.
+check:
+  type: json_schema
+  schema:
+    type: object
+    required: [objetivo, semanas, recursos]
+    properties:
+      objetivo: {type: string, minLength: 10}
+      semanas:
+        type: array
+        minItems: 4
+        maxItems: 4
+        items:
+          type: object
+          required: [semana, foco, atividades, meta_verificavel]
+          properties:
+            semana: {type: integer, minimum: 1, maximum: 4}
+            foco: {type: string, minLength: 5}
+            atividades: {type: array, minItems: 4, items: {type: string, minLength: 5}}
+            meta_verificavel: {type: string, minLength: 10}
+      recursos: {type: array, minItems: 3, items: {type: string}}

@@ -1,0 +1,16 @@
+key: medium-status-mini-erp
+category: medium
+title: Relatório de status semanal do mini-ERP a partir de notas e tarefas
+tenant: pessoal
+agent: projects
+fixture: medium-status-mini-erp
+expected_task_type: project_management
+expected_domain: projects
+tags: [projetos, mini-erp]
+prompt: |
+  Com base nas notas da reunião e no tarefas.csv em {workdir}, escreva o status semanal do projeto mini-ERP
+  em Markdown com as seções "Concluído", "Em andamento", "Bloqueios" (com causa e quem destrava) e
+  "Próximos passos" (com responsável e prazo). Inclua as decisões tomadas. Seja objetivo.
+check:
+  type: regex
+  pattern: '(?is)(?=.*conclu[ií]do)(?=.*em andamento)(?=.*bloqueio)(?=.*pr[oó]ximos passos)(?=.*nf-?e)(?=.*certificado)(?=.*marina)(?=.*(mobile|app m[oó]vel))'

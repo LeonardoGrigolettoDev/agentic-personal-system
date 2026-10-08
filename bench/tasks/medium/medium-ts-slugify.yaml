@@ -1,0 +1,18 @@
+key: medium-ts-slugify
+category: medium
+title: Slugs de produtos com acentos e unicidade (TypeScript)
+tenant: pessoal
+agent: engineering
+fixture: medium-ts-slugify
+expected_task_type: implementation
+expected_domain: engineering
+tags: [typescript, mini-erp]
+prompt: |
+  Implemente slugify e slugUnico em {workdir}/src/slug.ts para as URLs dos produtos da loja do mini-ERP,
+  seguindo os comentários do arquivo (sem acentos, só [a-z0-9] com hífens, tamanho máximo cortando em limite
+  de palavra, sufixos -2, -3... para unicidade). Sem dependências externas. O teste src/slug.test.ts não pode
+  ser alterado; rode `node --test src/*.test.ts`.
+check:
+  type: command
+  run: node --test src/*.test.ts
+  protect: [src/slug.test.ts]

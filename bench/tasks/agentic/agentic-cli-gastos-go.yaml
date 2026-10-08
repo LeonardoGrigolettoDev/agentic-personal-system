@@ -1,0 +1,36 @@
+key: agentic-cli-gastos-go
+category: agentic
+title: Criar do zero uma CLI Go de gastos por categoria
+tenant: pessoal
+agent: engineering
+fixture: agentic-cli-gastos-go
+expected_task_type: implementation
+expected_domain: engineering
+tags: [go, financas, scaffold]
+prompt: |
+  Em {workdir} só existe o extrato.csv do meu banco. Crie ali um módulo Go (só biblioteca padrão) com um
+  programa que, rodando `go run . extrato.csv`, imprime no stdout um objeto JSON {"<categoria>": total} com o
+  total GASTO por categoria em reais (número com 2 casas). Regras: separador ';', valores no formato
+  brasileiro (1.234,56); valores negativos são gastos; linhas da categoria "receita" são ignoradas; valores
+  positivos em outras categorias são estornos e abatem o gasto daquela categoria. Deixe `go vet` limpo,
+  rode o programa e mostre a saída.
+check:
+  type: command
+  run: |
+    set -e
+    test -f go.mod
+    go vet ./...
+    python3 - <<'PY'
+    import json, subprocess, sys
+    proc = subprocess.run(["go", "run", ".", "extrato.csv"], capture_output=True, text=True, timeout=300)
+    print(proc.stdout[-2000:], proc.stderr[-1000:])
+    want = {"assinaturas": 77.80, "educacao": 1238.00, "mercado": 1001.75, "moradia": 3098.46,
+            "restaurantes": 243.60, "saude": 219.89, "transporte": 445.35}
+    try:
+        got = json.loads(proc.stdout)
+    except ValueError:
+        sys.exit(1)
+    ok = proc.returncode == 0 and set(got) == set(want) and all(abs(float(got[k]) - v) < 0.005 for k, v in want.items())
+    sys.exit(0 if ok else 1)
+    PY
+  protect: [extrato.csv]

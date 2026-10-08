@@ -1,0 +1,23 @@
+key: simple-prioriza-tarefas
+category: simple
+title: Priorizar tarefas de amanhã
+tenant: pessoal
+agent: personal
+expected_task_type: planning
+expected_domain: personal
+tags: [planejamento]
+prompt: |
+  Organize minhas tarefas de amanhã em uma lista numerada por prioridade, com um horário sugerido para cada
+  (trabalho das 9h às 18h): revisar o PR do app de entregas da Nitro (urgente, bloqueia o time, ~1h);
+  academia (1h, prefiro de manhã cedo ou à noite); estudar inglês 30 min; pagar a fatura do cartão (vence
+  amanhã); responder a contadora sobre o certificado digital (5 min); ler um capítulo do livro de Go.
+check:
+  type: llm_judge
+  pass_score: 7
+  rubric: |
+    - Lista numerada com TODAS as 6 tarefas, cada uma com horário sugerido.
+    - Pagar a fatura e revisar o PR aparecem entre as primeiras prioridades (vencimento/urgência).
+    - O PR está dentro do horário de trabalho (9h-18h), de preferência no início do dia.
+    - Academia de manhã cedo (antes das 9h) ou à noite (depois das 18h), não no meio do expediente.
+    - Responder a contadora é tratado como tarefa rápida, encaixada cedo.
+    - Horários não se sobrepõem e a agenda é realista.

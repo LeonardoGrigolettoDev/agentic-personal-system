@@ -1,0 +1,16 @@
+key: debug-log-panic-rotas
+category: debugging
+title: Panic "index out of range" no roteirizador (stack trace)
+tenant: nitro
+agent: engineering
+fixture: debug-log-panic-rotas
+expected_task_type: debugging
+expected_domain: engineering
+tags: [go, logs]
+prompt: |
+  O roteirizador do app de entregas está dando panic em produção. O log está em {workdir}/panic.log e o
+  código do serviço no mesmo diretório. Sem rodar o serviço, diga: (1) o arquivo e a linha da causa raiz,
+  (2) por que só acontece em algumas rotas e (3) a correção exata (trecho de código). Não precisa aplicar.
+check:
+  type: regex
+  pattern: '(?is)(?=.*rota\.go)(?=.*\b2[78]\b)(?=.*(<=|<\s*len))'

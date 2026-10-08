@@ -1,0 +1,11 @@
+key: simple-cron-dias-uteis
+category: simple
+title: Expressão cron para dias úteis às 7h30
+tenant: shared
+expected_task_type: conversation
+tags: [cron]
+prompt: |
+  Qual expressão cron (5 campos, padrão Unix) roda de segunda a sexta às 7h30? Responda só a expressão.
+check:
+  type: regex
+  pattern: '(?i)(^|[\s`"''])30\s+0?7\s+\*\s+\*\s+(1-5|mon-fri)([\s`"'']|$)'

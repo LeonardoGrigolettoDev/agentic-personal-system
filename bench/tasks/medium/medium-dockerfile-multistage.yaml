@@ -1,0 +1,57 @@
+key: medium-dockerfile-multistage
+category: medium
+title: Dockerfile multi-stage, mínimo e sem root (Go)
+tenant: nitro
+agent: engineering
+fixture: medium-dockerfile-multistage
+expected_task_type: implementation
+expected_domain: engineering
+tags: [docker, go]
+prompt: |
+  O Dockerfile do microserviço de status da Nitro (em {workdir}) gera uma imagem enorme e roda como root.
+  Reescreva-o como multi-stage: estágio de build com cache de dependências (copie go.mod antes do código) e
+  binário estático (CGO_ENABLED=0); imagem final mínima (distroless static ou alpine) que só recebe o binário
+  via COPY --from, roda como usuário não-root e expõe 8080. Não há Docker neste ambiente: não tente buildar a
+  imagem, mas garanta que `go vet ./...` continua passando. Explique as escolhas em poucas linhas.
+check:
+  type: command
+  run: |
+    set -e
+    go vet ./...
+    python3 - <<'PY'
+    import re, sys
+    lines = [l.strip() for l in open("Dockerfile", encoding="utf-8") if l.strip() and not l.lstrip().startswith("#")]
+    stages, cur = [], None
+    for l in lines:
+        if re.match(r"(?i)^FROM\s", l):
+            cur = [l]
+            stages.append(cur)
+        elif cur is not None:
+            cur.append(l)
+    problems = []
+    if len(stages) < 2:
+        problems.append("precisa de pelo menos 2 estágios")
+    else:
+        build = "\n".join(l for s in stages[:-1] for l in s)
+        final = "\n".join(stages[-1])
+        base = stages[-1][0].split()[1].lower()
+        if "go build" not in build:
+            problems.append("go build fora do estágio de build")
+        if "CGO_ENABLED=0" not in build:
+            problems.append("CGO_ENABLED=0 ausente")
+        m = re.search(r"(?m)^COPY\s+go\.(mod|sum)", build)
+        if m is None or m.start() > build.find("COPY . ."):
+            problems.append("go.mod deve ser copiado antes do código")
+        if "golang" in base or not re.search(r"distroless|alpine|scratch|chainguard|wolfi", base):
+            problems.append(f"imagem final não é mínima: {base}")
+        if "COPY --from=" not in final:
+            problems.append("estágio final não copia o binário com --from")
+        users = re.findall(r"(?mi)^USER\s+(\S+)", final)
+        if not (users and users[-1].split(":")[0] not in ("root", "0")) and "nonroot" not in base:
+            problems.append("estágio final roda como root")
+        if "go build" in final:
+            problems.append("estágio final compila código")
+    print("\n".join(problems) or "Dockerfile ok")
+    sys.exit(1 if problems else 0)
+    PY
+  protect: [main.go, go.mod]
