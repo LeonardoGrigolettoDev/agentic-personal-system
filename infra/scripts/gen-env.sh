@@ -29,6 +29,10 @@ set_if_empty HERMES_API_KEY "$(hex 32)"
 set_if_empty DECISION_API_KEY "$(hex 32)"
 set_if_empty KNOWLEDGE_API_KEY "$(hex 32)"
 set_if_empty EDGE_API_KEY "$(hex 32)"
+set_if_empty EDGE_TENANT_KEYS "nitro:$(hex 24),pessoal:$(hex 24),shared:$(hex 24)"
+for p in ENGINEERING FINANCE PROJECTS PERSONAL LEARNING; do
+  set_if_empty "HERMES_API_KEY_${p}" "$(hex 32)"
+done
 set_if_empty NEXTAUTH_SECRET "$(b64)"
 set_if_empty LANGFUSE_SALT "$(b64)"
 set_if_empty LANGFUSE_ENCRYPTION_KEY "$(hex 32)"

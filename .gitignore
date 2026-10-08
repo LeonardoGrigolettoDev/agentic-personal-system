@@ -12,3 +12,7 @@ knowledge/processed/*
 **/.pytest_cache/
 decision/bin/
 *.dump
+**/.ruff_cache/
+.pytest_cache/
+.railway/
+compose.override.yaml

@@ -124,6 +124,12 @@ def test_finalize_and_kanban_complete(plugin, services):
     assert finishes and all(b["status"] == "succeeded" for b in finishes)
 
 
+def test_aios_task_check_counts_as_a_test():
+    from aios import checks
+
+    assert checks.looks_like_test("aios-task-check t-123") and checks.looks_like_test("python3 -m unittest -q")
+
+
 def test_test_results_are_remembered(plugin, services, monkeypatch):
     mod, ctx = plugin
     decision, _ = services
@@ -148,3 +154,61 @@ def test_tool_search_bridge_is_unwrapped(plugin, services, monkeypatch):
     assert block and block["action"] == "block" and "isolamento" in block["message"]
     ok = {"calls": [{"name": "mcp__knowledge__knowledge_search", "arguments": {"tenant": "nitro", "query": "x"}}]}
     assert ctx.hooks["pre_tool_call"](tool_name="tool_call", args=ok, session_id="s10") is None
+
+
+def test_cron_tenant_tag_routes_even_behind_skill_bodies(plugin, services):
+    _, ctx = plugin
+    decision, knowledge = services
+    decision.routes[("POST", "/v1/route")] = {**ROUTE, "tenant": "pessoal", "domain": "chief"}
+    knowledge.routes[("POST", "/v1/context/compile")] = {"token_estimate": 0, "markdown": ""}
+    message = "[skill daily_review]\n" + "corpo da skill " * 600 + "\nRevisão da manhã. Tenant desta execução: **pessoal**."
+    ctx.hooks["pre_llm_call"](session_id="c1", user_message=message, is_first_turn=True)
+    assert decision.body("/v1/route")["tenant"] == "pessoal"
+    assert knowledge.body("/v1/context/compile")["tenant"] == "pessoal"
+
+
+def test_worker_tenant_beats_the_tag(plugin, services, monkeypatch):
+    _, ctx = plugin
+    decision, _ = services
+    decision.routes[("POST", "/v1/route")] = ROUTE
+    monkeypatch.setenv("HERMES_TENANT", "nitro")
+    ctx.hooks["pre_llm_call"](session_id="c2", user_message="Tenant desta execução: **pessoal**")
+    assert decision.body("/v1/route")["tenant"] == "nitro"
+
+
+def test_bench_sessions_cannot_leave_traces(plugin, services):
+    _, ctx = plugin
+    for tool in ("memory", "mcp__knowledge__memory_save", "mcp__knowledge__ingest_note", "kanban_create",
+                 "cronjob_manage", "send_message"):
+        out = ctx.hooks["pre_tool_call"](tool_name=tool, args={}, session_id="bench-simple-x-1-20261007000000")
+        assert out and out["action"] == "block" and "bench" in out["message"], tool
+    wrapped = {"calls": [{"name": "memory", "arguments": {"action": "add"}}]}
+    assert ctx.hooks["pre_tool_call"](tool_name="tool_call", args=wrapped, session_id="bench-y")["action"] == "block"
+    assert ctx.hooks["pre_tool_call"](tool_name="memory", args={}, session_id="s-normal") is None
+    assert ctx.hooks["pre_tool_call"](tool_name="mcp__knowledge__knowledge_search", args={}, session_id="bench-z") is None
+
+
+def test_edge_key_is_scoped_to_the_worker_tenant(services, monkeypatch):
+    import importlib
+    import sys
+
+    from conftest import FakeCtx
+
+    def load(**env):
+        for k in ("EDGE_API_KEY", "EDGE_TENANT_KEYS", "HERMES_TENANT", "HERMES_KANBAN_TASK"):
+            monkeypatch.delenv(k, raising=False)
+        for k, v in env.items():
+            monkeypatch.setenv(k, v)
+        for name in [m for m in sys.modules if m == "aios" or m.startswith("aios.")]:
+            del sys.modules[name]
+        importlib.import_module("aios").register(FakeCtx())
+        import os
+        return os.environ.get("EDGE_API_KEY"), os.environ.get("EDGE_TENANT_KEYS")
+
+    keys = "nitro:nitro-key-0000000000,pessoal:pessoal-key-000000000"
+    # Kanban worker: only its tenant's key, and the map is dropped
+    assert load(EDGE_TENANT_KEYS=keys, HERMES_TENANT="pessoal", HERMES_KANBAN_TASK="t1") == ("pessoal-key-000000000", None)
+    # gateway (chief, no tenant): no edge key, keeps the map for the workers it spawns
+    assert load(EDGE_TENANT_KEYS=keys, EDGE_API_KEY="admin") == (None, keys)
+    # no tenant map configured: EDGE_API_KEY passes as is
+    assert load(EDGE_API_KEY="admin") == ("admin", None)

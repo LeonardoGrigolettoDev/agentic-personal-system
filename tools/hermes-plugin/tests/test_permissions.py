@@ -73,3 +73,18 @@ def test_profile_name(monkeypatch):
     assert permissions.profile_name() == "chief"
     monkeypatch.setenv("HERMES_PROFILE", "finance")
     assert permissions.profile_name() == "finance"
+
+
+def test_profile_name_follows_the_served_profile(monkeypatch):
+    import sys
+    import types
+
+    monkeypatch.delenv("AIOS_AGENT", raising=False)
+    monkeypatch.setenv("HERMES_PROFILE", "chief")  # launch profile's environment on a multiplexed gateway
+    fake = types.ModuleType("hermes_cli.profiles")
+    fake.current_profile_name = lambda default=None: "engineering"
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.profiles", fake)
+    assert permissions.profile_name() == "engineering"
+    fake.current_profile_name = lambda default=None: "default"
+    assert permissions.profile_name() == "chief"

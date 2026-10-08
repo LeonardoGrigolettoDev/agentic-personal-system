@@ -19,7 +19,7 @@ _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="aios")
 _pending: set[Future] = set()
 _pending_lock = threading.Lock()
 TEST_COMMAND = re.compile(r"\b(go test|pytest|uv run pytest|npm (run )?test|pnpm (run )?test|yarn test|cargo test|"
-                          r"make (test|check)|vitest|jest|aios-check)\b")
+                          r"make (test|check)|vitest|jest|aios-check|aios-task-check|python3? -m (pytest|unittest))\b")
 EXIT_CODE = re.compile(r"(?:exit[_ ]code|exit status|Exit code)[\"':= ]+(-?\d+)", re.IGNORECASE)
 
 
@@ -75,7 +75,9 @@ def run_check(changed_path: str | None) -> dict | None:
            "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10"]
     if key := os.environ.get("TERMINAL_SSH_KEY"):
         cmd += ["-i", key]
-    cmd += [target, "aios-check --json " + shlex.quote(changed_path)]
+    # absolute path: an agent-writable ~/.local/bin or ~/go/bin can't shadow the validator
+    check_bin = os.environ.get("AIOS_CHECK_BIN", "/usr/local/bin/aios-check")
+    cmd += [target, f"{shlex.quote(check_bin)} --json {shlex.quote(changed_path)}"]
     timeout = int(os.environ.get("AIOS_CHECK_TIMEOUT", "600"))
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)

@@ -28,10 +28,14 @@ profiles:
 # Scheduled reviews (§17 TIME -> CRON). Run by the chief gateway; each becomes a normal Hermes session
 # that the aios plugin routes and budgets. Prompts live in workflows/<name>.md.
 cron:
-  - { name: morning-review,     schedule: "30 7 * * *",  skills: [productivity/daily_review] }
-  - { name: daily-planning,     schedule: "0 8 * * 1-5", skills: [productivity/daily_planning] }
-  - { name: engineering-review, schedule: "0 9 * * 1-5", skills: [projects/project_status] }
-  - { name: project-review,     schedule: "30 18 * * 1-5", skills: [projects/project_status, projects/roadmap_update] }
-  - { name: learning-review,    schedule: "0 20 * * *",  skills: [knowledge/knowledge_capture] }
-  - { name: daily-reflection,   schedule: "30 22 * * *", skills: [productivity/daily_review] }
-  - { name: weekly-review,      schedule: "0 19 * * 0",  skills: [productivity/weekly_review] }
+  # No attached skills: Hermes would prepend their bodies to the prompt, pushing the workflow's
+  # "Tenant desta execução" line away from what the aios plugin routes on; each workflow loads its
+  # skill on demand with skill_view (and the plugin also honours the explicit tenant tag).
+  - { name: morning-review,      schedule: "30 7 * * *" }    # pessoal  · productivity/daily_review (manhã)
+  - { name: daily-planning,      schedule: "0 8 * * 1-5" }   # nitro    · productivity/daily_planning
+  - { name: engineering-review,  schedule: "0 9 * * 1-5" }   # nitro    · projects/project_status
+  - { name: project-review,      schedule: "30 18 * * 1-5" } # nitro    · projects/project_status + roadmap_update
+  - { name: learning-review,     schedule: "0 20 * * *" }    # pessoal  · knowledge/knowledge_capture
+  - { name: daily-reflection,    schedule: "30 22 * * *" }   # pessoal  · productivity/daily_review (noite)
+  - { name: weekly-review,       schedule: "0 19 * * 0" }    # pessoal  · productivity/weekly_review
+  - { name: weekly-review-nitro, schedule: "30 17 * * 5" }   # nitro    · productivity/weekly_review

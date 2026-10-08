@@ -67,6 +67,14 @@ tools:
 plugins:
   enabled: [aios]
 
+platform_toolsets: # each platform's default preset + kanban: the chief reads the board and delegates with
+  # kanban_list/kanban_create (Hermes hides them from non-worker profiles otherwise). hermes-setup removes
+  # kanban from the domain profiles, which get their worker tools (kanban_complete/block) from the dispatcher.
+  cli: [hermes-cli, kanban]
+  cron: [hermes-cron, kanban]
+  api_server: [hermes-api-server, kanban]
+  telegram: [hermes-telegram, kanban]
+
 kanban: # domain agents run as on-demand Kanban workers (profiles), one at a time on 16 GB
   dispatch_in_gateway: true
   dispatch_interval_seconds: 30

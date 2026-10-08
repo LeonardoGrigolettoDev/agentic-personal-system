@@ -18,14 +18,13 @@ for db in aios litellm langfuse; do
   fi
 done
 
-# Hermes state.db is SQLite WAL: take a consistent copy through the sqlite backup API when running
-if [[ -n "$(docker compose --profile agent ps -q --status running hermes 2>/dev/null)" ]]; then
-  docker compose exec -T hermes /opt/hermes/.venv/bin/python -c \
-    "import sqlite3;s=sqlite3.connect('/opt/data/state.db');d=sqlite3.connect('/opt/data/state.backup.db');s.backup(d);d.close()" ||
-    echo "WARN: hermes sqlite backup failed" >&2
+# Hermes keeps state.db, response_store.db and per-profile databases in SQLite WAL mode: export every one of
+# them as a backup-API copy (consistent while the gateway runs or not; never a live -wal/-shm pair)
+if [[ -d data/hermes ]]; then
+  python3 infra/railway/hermes/hermes_state.py export data/hermes "$out/hermes-data.tgz" >/dev/null ||
+    echo "WARN: hermes state export failed" >&2
 fi
-tar --exclude='data/hermes/state.db' --exclude='data/hermes/state.db-*' \
-  -czf "$out/hermes-data.tgz" data/hermes config agents skills prompts workflows 2>/dev/null || true
+tar -czf "$out/repo-config.tgz" config agents skills prompts workflows 2>/dev/null || true
 install -m 600 .env "$out/env.bak" # holds LITELLM_SALT_KEY - losing it bricks stored LiteLLM keys
 
 find backups -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +

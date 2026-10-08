@@ -26,6 +26,12 @@ HOME = Path(os.environ.get("HERMES_HOME", "/opt/data"))
 AIOS = Path(os.environ.get("AIOS_ROOT", "/opt/aios"))
 HERMES = os.environ.get("HERMES_BIN", "hermes")
 PLUGIN_NAME = "aios"
+# The gateway multiplexes profiles, and then resolves every profile's secrets - the chief's included - only from
+# that profile's .env, never from the container env (verified: LiteLLM got "Bearer no-key", the knowledge MCP 401).
+# So the keys Hermes itself reads (model key_env, MCP header, adapters) are synced into each .env here.
+PROFILE_SECRETS = ("LITELLM_API_KEY", "KNOWLEDGE_API_KEY")
+CHIEF_SECRETS = (*PROFILE_SECRETS, "TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS", "HERMES_LANGFUSE_PUBLIC_KEY",
+                 "HERMES_LANGFUSE_SECRET_KEY", "HERMES_LANGFUSE_BASE_URL")
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -84,6 +90,29 @@ def link_plugin(home: Path, dry: bool) -> bool:
             shutil.rmtree(link)
         link.symlink_to(target, target_is_directory=True)
     return True
+
+
+def set_env_value(path: Path, key: str, value: str, dry: bool) -> bool:
+    """Set KEY=value in a Hermes .env, keeping every other line. Returns changed."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    wanted = f"{key}={value}"
+    kept = [ln for ln in lines if not ln.startswith(f"{key}=")]
+    if wanted in lines and len(kept) == len(lines) - 1:
+        return False
+    if not dry:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join([*kept, wanted]) + "\n", encoding="utf-8")
+        path.chmod(0o600)
+    return True
+
+
+def without_kanban(config: dict) -> dict:
+    """Only the chief orchestrates the board; domain profiles get worker tools from the dispatcher."""
+    out = copy.deepcopy(config)
+    for platform, names in (out.get("platform_toolsets") or {}).items():
+        if isinstance(names, list):
+            out["platform_toolsets"][platform] = [n for n in names if n != "kanban"]
+    return out
 
 
 def hermes(*args: str, home: Path = HOME) -> subprocess.CompletedProcess:
@@ -146,6 +175,12 @@ def ensure_cron(jobs: list[dict], dry: bool, recreate: bool) -> list[str]:
 
 
 def main() -> int:
+    if hasattr(os, "geteuid") and os.geteuid() == 0 and not os.environ.get("AIOS_SETUP_AS_ROOT"):
+        # docker exec defaults to root: config.yaml/.env written now would be root-owned (and .env 0600),
+        # unreadable to the gateway, which runs as the hermes user
+        print("run as the hermes user: docker compose --profile agent exec --user hermes hermes ... "
+              "(or `make hermes-setup`); AIOS_SETUP_AS_ROOT=1 overrides", file=sys.stderr)
+        return 2
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--recreate-cron", action="store_true", help="re-create cron jobs from workflows/*.md")
@@ -165,19 +200,27 @@ def main() -> int:
 
     changed = write_config(HOME, template, args.dry_run)
     report.append(f"chief config.yaml: {'updated' if changed else 'unchanged'}")
+    synced = [k for k in CHIEF_SECRETS if os.environ.get(k) and set_env_value(HOME / ".env", k, os.environ[k], args.dry_run)]
+    report.append(f"chief secrets: {', '.join(synced) or 'unchanged'}")
     soul = sync_file(AIOS / "agents/chief/SOUL.md", HOME / "SOUL.md", args.dry_run)
     report.append(f"chief SOUL.md: {'updated' if soul else 'unchanged'}")
     report.append(f"chief plugin link: {'created' if link_plugin(HOME, args.dry_run) else 'ok'}")
 
     for name, prof in (spec.get("profiles") or {}).items():
         home, created = ensure_profile(name, prof.get("description", ""), args.dry_run)
-        managed = deep_merge(template, prof.get("overrides") or {})
+        managed = without_kanban(deep_merge(template, prof.get("overrides") or {}))
         managed.setdefault("kanban", {})["dispatch_in_gateway"] = False  # only the chief gateway dispatches
         cfg = write_config(home, managed, args.dry_run)
         soul = sync_file(AIOS / f"agents/{name}/SOUL.md", home / "SOUL.md", args.dry_run)
         plugin = link_plugin(home, args.dry_run)
+        # /p/<profile>/ on the multiplexed API server authenticates with the profile's own API_SERVER_KEY
+        secrets = {k: os.environ[k] for k in PROFILE_SECRETS if os.environ.get(k)}
+        if api_key := os.environ.get(f"HERMES_API_KEY_{name.upper()}", ""):
+            secrets["API_SERVER_KEY"] = api_key
+        synced = [k for k, v in secrets.items() if set_env_value(home / ".env", k, v, args.dry_run)]
         report.append(f"profile {name}: {'created' if created else 'exists'}; config {'updated' if cfg else 'unchanged'}; "
-                      f"SOUL {'updated' if soul else 'unchanged'}; plugin {'linked' if plugin else 'ok'}")
+                      f"SOUL {'updated' if soul else 'unchanged'}; plugin {'linked' if plugin else 'ok'}; "
+                      f"secrets {', '.join(synced) or 'unchanged'}{'' if api_key else ' (no API key)'}")
 
     if not args.no_cron:
         report += ensure_cron(spec.get("cron") or [], args.dry_run, args.recreate_cron)

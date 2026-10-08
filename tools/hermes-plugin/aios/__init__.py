@@ -14,8 +14,10 @@ Every remote call is fail-open for availability (a down service never wedges the
 the local safety guards, which always apply.
 """
 
+import fnmatch
 import logging
 import os
+import re
 from pathlib import Path
 
 from . import checks, client, permissions
@@ -42,11 +44,18 @@ _knowledge = client.knowledge()
 
 # Tools that stay available after the budget is exhausted so the agent can wrap up cleanly.
 WRAP_UP_TOOLS = {"kanban_complete", "kanban_block", "kanban_comment", "clarify", "send_message", "memory", "todo"}
+# Scheduled workflows state their tenant explicitly (workflows/*.md); honoured anywhere in the message.
+TENANT_TAG = re.compile(r"Tenant desta execu[cç][aã]o:\s*\**\s*(nitro|pessoal|shared)\b", re.IGNORECASE)
+# Bench sessions (bench/, session ids "bench-...") must leave no durable trace and start no async work.
+BENCH_PREFIX = "bench-"
+BENCH_BLOCKED = ("memory", "mcp__knowledge__memory_save", "mcp__knowledge__ingest_note", "mcp__knowledge__project_upsert",
+                 "kanban_create", "kanban_link", "kanban_comment", "cronjob_manage", "send_message")
 
 
 def register(ctx) -> None:
     global _agents
     _agents = permissions.load_agents(Path(os.environ.get("AIOS_AGENTS_DIR", "/opt/aios/agents")))
+    _scope_edge_key()
     ctx.register_system_prompt_section("aios.policy", POLICY_SECTION)
     ctx.register_middleware("llm_request", on_llm_request)
     for name, fn in (("pre_llm_call", on_pre_llm_call), ("post_api_request", on_post_api_request),
@@ -62,18 +71,46 @@ def _agent() -> permissions.AgentPolicy | None:
     return _agents.get(permissions.profile_name())
 
 
+def _scope_edge_key() -> None:
+    """EDGE_TENANT_KEYS="tenant:key,...": a Kanban worker (HERMES_TENANT) gets only its tenant's edge key as
+    EDGE_API_KEY, which the transcript_to_notes skill forwards to the sandbox; the edge then refuses any
+    other tenant. Every other process gets no edge key at all."""
+    keys = dict(p.strip().split(":", 1) for p in os.environ.get("EDGE_TENANT_KEYS", "").split(",") if ":" in p)
+    if not keys:
+        return
+    tenant = os.environ.get("HERMES_TENANT", "")
+    if keys.get(tenant):
+        os.environ["EDGE_API_KEY"] = keys[tenant]
+    else:
+        os.environ.pop("EDGE_API_KEY", None)
+    if os.environ.get("HERMES_KANBAN_TASK"):
+        os.environ.pop("EDGE_TENANT_KEYS", None)  # the dispatcher keeps the map for its next workers
+
+
+def _instruction(text: str) -> str:
+    """What the user (or the cron job) asked, without skill bodies Hermes expands in front of it."""
+    try:
+        from agent.skill_commands import extract_user_instruction_from_skill_message
+        return extract_user_instruction_from_skill_message(text) or text
+    except Exception:  # noqa: BLE001 - Hermes internals: any failure falls back to the raw message
+        return text
+
+
 # ---------------------------------------------------------------- routing + context (first turn)
 
 def on_pre_llm_call(session_id: str = "", user_message=None, is_first_turn: bool = False, **_):
     if not session_id:
         return None
     s = _sessions.get(session_id)
-    text = user_message if isinstance(user_message, str) else str(user_message or "")
+    raw = user_message if isinstance(user_message, str) else str(user_message or "")
+    text = _instruction(raw)
     parts: list[str] = []
 
     if not s.routed and _decision.enabled:
         body = {"session_id": session_id, "text": text[:4000], "agent": permissions.profile_name()}
-        if tenant := os.environ.get("HERMES_TENANT") or os.environ.get("AIOS_DEFAULT_TENANT"):
+        tag = TENANT_TAG.search(raw)
+        if tenant := (os.environ.get("HERMES_TENANT") or (tag.group(1).lower() if tag else None)
+                      or os.environ.get("AIOS_DEFAULT_TENANT")):
             body["tenant"] = tenant
         if task := os.environ.get("HERMES_KANBAN_TASK"):
             body["task_id"] = task
@@ -194,6 +231,9 @@ def on_pre_tool_call(tool_name: str = "", args=None, session_id: str = "", **_):
         calls = [(c.get("name", ""), c.get("arguments") if isinstance(c.get("arguments"), dict) else {})
                  for c in args.get("calls") or [] if isinstance(c, dict)]
     for name, call_args in calls:
+        if session_id.startswith(BENCH_PREFIX) and any(fnmatch.fnmatchcase(name, p) for p in BENCH_BLOCKED):
+            return {"action": "block", "message": f"[aios] sessão de teste (bench): '{name}' desativado — "
+                                                  "responda nesta sessão, sem memória, Kanban, cron ou mensagens."}
         verdict = permissions.check_tool(_agent(), name, call_args, tenant)
         if not verdict.allow:
             log.warning("blocked tool %s for %s: %s", name, permissions.profile_name(), verdict.reason)

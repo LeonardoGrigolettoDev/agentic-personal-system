@@ -130,6 +130,15 @@ def check_tool(agent: AgentPolicy | None, tool_name: str, args: dict, tenant: st
 
 
 def profile_name() -> str:
-    """Hermes profile of this process: the Kanban worker sets HERMES_PROFILE; the default home is chief."""
-    name = os.environ.get("AIOS_AGENT") or os.environ.get("HERMES_PROFILE") or "chief"
-    return "chief" if name in ("default", "") else name
+    """Hermes profile the current turn runs FOR. A multiplexed gateway serves /p/<profile>/ requests and cron
+    ticks from one process whose environment is the launch (chief) profile's, so ask Hermes first; the
+    Kanban dispatcher also pins HERMES_PROFILE on its workers. The default home is the chief."""
+    name = os.environ.get("AIOS_AGENT") or ""
+    if not name:
+        try:
+            from hermes_cli.profiles import current_profile_name
+            name = current_profile_name() or ""
+        except Exception:  # noqa: BLE001 - outside Hermes (tests) or an API change: fall back to the env pin
+            name = ""
+    name = name or os.environ.get("HERMES_PROFILE") or "chief"
+    return "chief" if name in ("default", "custom", "") else name
