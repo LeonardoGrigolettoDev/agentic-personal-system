@@ -201,7 +201,7 @@ func (p *Policy) Agent(slug string) Agent {
 		return a
 	}
 	return Agent{Slug: "chief", Domain: "chief", DefaultModel: p.DefaultModel, MaxTier: 5, MaxCostPerRun: 0.5,
-		TokenBudget: TokenBudget{Total: 30000}, MaxIterations: 8}
+		TokenBudget: TokenBudget{Total: 200000}, MaxIterations: 8}
 }
 
 // TaskTypeNames returns the configured task types, sorted (stable classifier options).

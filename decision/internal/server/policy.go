@@ -76,6 +76,7 @@ type routeRequest struct {
 	Domain          string     `json:"domain,omitempty"`
 	TaskType        string     `json:"task_type,omitempty"`
 	Complexity      string     `json:"complexity,omitempty"`
+	Model           string     `json:"model,omitempty"` // pinned start model (bench model comparisons)
 	Deadline        *time.Time `json:"deadline,omitempty"`
 }
 
@@ -159,6 +160,14 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 		s.Log.WarnContext(ctx, "learned stats unavailable", "err", err)
 	}
 	choice := s.Policy.StartModel(agent, taskType, complexity, stats)
+	if req.Model != "" {
+		if tier := s.Policy.Tier(req.Model); agent.MaxTier > 0 && tier > agent.MaxTier {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("model %q (tier %d) is above agent %q max_tier %d",
+				req.Model, tier, agent.Slug, agent.MaxTier))
+			return
+		}
+		choice = policy.Choice{Model: req.Model, Tier: s.Policy.Tier(req.Model), Reason: "pinned by caller"}
+	}
 	run, err := s.Ledger.CreateRun(ctx, ledger.Run{
 		SessionID: req.SessionID, Agent: agent.Slug, Tenant: classified["tenant"].(string), Domain: classified["domain"].(string),
 		TaskType: taskType, Complexity: complexity, HermesTaskID: req.TaskID, ParentSessionID: req.ParentSessionID,
@@ -188,6 +197,12 @@ func (s *Server) validateRouteHints(req routeRequest) error {
 		check("tenant", req.Tenant, policy.Tenants),
 		check("complexity", req.Complexity, policy.Complexities),
 		check("task_type", req.TaskType, s.Policy.TaskTypeNames()),
+		func() error {
+			if _, ok := s.Policy.Models[req.Model]; req.Model != "" && !ok {
+				return fmt.Errorf("unknown model %q (not in routing.yaml models)", req.Model)
+			}
+			return nil
+		}(),
 		func() error {
 			if _, ok := s.Policy.Agents[req.Agent]; req.Agent != "" && !ok {
 				return fmt.Errorf("unknown agent %q", req.Agent)

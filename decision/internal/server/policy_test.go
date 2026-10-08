@@ -59,6 +59,7 @@ func (m *memLedger) RecordUsage(ctx context.Context, u ledger.UsageRow) (bool, *
 		r := m.runs[u.SessionID]
 		r.InputTokens += int64(u.InputTokens)
 		r.OutputTokens += int64(u.OutputTokens)
+		r.CacheTokens += int64(u.CacheTokens)
 		r.CostUSD += u.CostUSD
 		r.LLMCalls++
 	}
@@ -105,8 +106,12 @@ func (m *memLedger) ApplyGate(ctx context.Context, run *ledger.Run, g policy.Gat
 func (m *memLedger) FinishRun(ctx context.Context, id, status, _ string) (*ledger.Run, error) {
 	m.mu.Lock()
 	r, ok := m.runs[id]
-	if ok {
+	if ok && r.Status != "failed" && (r.EndedAt == nil || status == "failed") { // first close wins; failed sticks
+		now := time.Now()
 		r.Status = status
+		if r.EndedAt == nil {
+			r.EndedAt = &now
+		}
 	}
 	m.mu.Unlock()
 	if !ok {
@@ -252,6 +257,46 @@ func TestRouteHintsSkipClassificationAndValidate(t *testing.T) {
 	code, out = call(t, h, "POST", "/v1/route", `{"session_id":"s3","complexity":"insane"}`)
 	if code != 400 {
 		t.Fatalf("bad complexity accepted: %d %v", code, out)
+	}
+}
+
+func TestRoutePinnedModel(t *testing.T) {
+	h := policyServer(t, newMem(), classifier{})
+	code, out := call(t, h, "POST", "/v1/route", `{"session_id":"p1","text":"bug","agent":"engineering","model":"tier4-pro"}`)
+	if code != 200 || out["model"] != "tier4-pro" || out["start_model"] != "tier4-pro" || out["route_reason"] != "pinned by caller" {
+		t.Fatalf("pinned model: %d %v", code, out)
+	}
+	if code, out = call(t, h, "POST", "/v1/route", `{"session_id":"p2","text":"x","model":"gpt-unknown"}`); code != 400 {
+		t.Fatalf("unknown model accepted: %d %v", code, out)
+	}
+	// personal max_tier 4: a pinned tier 5 model would bypass the approval gate
+	if code, out = call(t, h, "POST", "/v1/route", `{"session_id":"p3","text":"x","agent":"personal","model":"tier5-sonnet"}`); code != 400 {
+		t.Fatalf("pinned model above max_tier accepted: %d %v", code, out)
+	}
+}
+
+func TestFinishFirstCloseWins(t *testing.T) {
+	mem := newMem()
+	h := policyServer(t, mem, classifier{})
+	for _, c := range []struct{ session, first, second, want string }{
+		{"f1", "succeeded", "cancelled", "succeeded"}, // bench verdict, then Hermes session finalize on shutdown
+		{"f2", "cancelled", "succeeded", "cancelled"}, // bench infra error stays an error
+		{"f3", "succeeded", "failed", "failed"},       // failure evidence always sticks
+		{"f4", "failed", "succeeded", "failed"},
+	} {
+		call(t, h, "POST", "/v1/route", `{"session_id":"`+c.session+`","text":"bug"}`)
+		call(t, h, "POST", "/v1/runs/"+c.session+"/finish", `{"status":"`+c.first+`"}`)
+		_, out := call(t, h, "POST", "/v1/runs/"+c.session+"/finish", `{"status":"`+c.second+`"}`)
+		if out["status"] != c.want {
+			t.Errorf("%s then %s: got %v, want %s", c.first, c.second, out["status"], c.want)
+		}
+	}
+}
+
+func TestTokenBudgetCountsFreshTokens(t *testing.T) {
+	r := ledger.Run{InputTokens: 25000, CacheTokens: 20000, OutputTokens: 1000}
+	if got := r.Usage().Tokens; got != 6000 {
+		t.Fatalf("fresh tokens = %d, want 6000 (uncached input + output)", got)
 	}
 }
 

@@ -112,6 +112,10 @@ func TestLedgerLifecycle(t *testing.T) {
 	if err != nil || run.Status != "succeeded" || run.EndedAt == nil {
 		t.Fatalf("finish: %+v %v", run, err)
 	}
+	// first close wins (a later Hermes finalize can't rewrite the verdict); failed evidence always sticks
+	if run, err = db.FinishRun(ctx, session, "cancelled", ""); err != nil || run.Status != "succeeded" {
+		t.Fatalf("second close rewrote the outcome: %+v %v", run, err)
+	}
 	stats, err := db.Stats(ctx, "debugging")
 	if err != nil || len(stats) == 0 {
 		t.Fatalf("stats: %+v %v", stats, err)

@@ -30,10 +30,10 @@ allowed_tools:   # categories: shell filesystem knowledge web_research delegate 
   - mcp
 
 max_cost_per_run: 0.50
-token_budget:
-  total: 30000
+token_budget:   # fresh tokens per run (uncached input + output): Hermes resends ~18k of tool schemas per call
+  total: 400000
   decision: 1000
   retrieval: 3000
-  execution: 20000
-  final: 6000
+  execution: 380000
+  final: 16000
 max_iterations: 8

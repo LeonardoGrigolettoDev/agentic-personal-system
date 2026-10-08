@@ -49,9 +49,12 @@ type Run struct {
 	EndedAt             *time.Time `json:"ended_at,omitempty"`
 }
 
-// Usage and Limits feed policy.CheckBudget.
+// Usage and Limits feed policy.CheckBudget. The token budget counts fresh tokens (uncached input + output):
+// an agent loop resends its whole prompt (tool schemas, system prompt) every call, and those prefix
+// tokens come back as cache reads; cost already prices them, so they don't also eat the token budget.
 func (r *Run) Usage() policy.Usage {
-	return policy.Usage{CostUSD: r.CostUSD, Tokens: int(r.InputTokens + r.OutputTokens), Iterations: r.Iterations}
+	fresh := max(r.InputTokens-r.CacheTokens, 0) + r.OutputTokens
+	return policy.Usage{CostUSD: r.CostUSD, Tokens: int(fresh), Iterations: r.Iterations}
 }
 
 func (r *Run) Limits() policy.Limits {
@@ -233,10 +236,14 @@ func (db *DB) ApplyGate(ctx context.Context, run *Run, g policy.Gate, nextTier i
 	return db.GetRun(ctx, run.SessionID)
 }
 
-// FinishRun records a run's outcome (succeeded | failed | cancelled); a gate 'failed' is never turned into
-// 'succeeded' by a later session close, and ended_at keeps the first close.
+// FinishRun records a run's outcome (succeeded | failed | cancelled). The first close wins: a later close
+// (Hermes' session finalize after the bench verdict, a gateway shutdown) never rewrites it, except that
+// 'failed' evidence always sticks. ended_at keeps the first close.
 func (db *DB) FinishRun(ctx context.Context, sessionID, status, taskType string) (*Run, error) {
-	tag, err := db.pool.Exec(ctx, `UPDATE agent_runs SET status = CASE WHEN status = 'failed' AND $2 = 'succeeded' THEN status ELSE $2 END,
+	tag, err := db.pool.Exec(ctx, `UPDATE agent_runs SET status = CASE
+		  WHEN status = 'failed' THEN status
+		  WHEN ended_at IS NOT NULL AND $2 <> 'failed' THEN status
+		  ELSE $2 END,
 		task_type = coalesce(nullif($3,''), task_type),
 		ended_at = coalesce(ended_at, now()) WHERE session_id = $1`, sessionID, status, taskType)
 	if err != nil {
